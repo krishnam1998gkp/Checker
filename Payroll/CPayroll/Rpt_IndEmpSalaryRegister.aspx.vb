@@ -17,6 +17,10 @@
 '20.    Vishal Chauhan  12 Sep 2024     Progress bar added on salary slip
 '21.    Debargha        07 Oct 2024     Added logic to hit the download status within 4 seconds for first time and 10 seconds thereafter 
 '22.    Vishal Chauhan  27 Jan 2025     Progress bar on Excel with Report API
+'23.    Vishal Chauhan  24 Mar 2025     CSV button warning message on Excel button if MstRptAPIConfig is not configured.
+'24.    Vishal Chauhan  15 May 2025     Wrong month year pick on downloading excel for extrapolate & Show Arrear in Same Month Issue fixed.
+'24.    Vishal Chauhan  15 May 2025     Year to Date Register Already Generated download button added
+'25.    Vishal Chauhan  20 Jun 2025     HeavyExcel tag change
 '=======================================================================================================
 Option Explicit On
 Imports System.Data
@@ -35,7 +39,6 @@ Namespace Payroll
 #Region "Developer Generated Code"
         Protected ObjCommon As New PayrollUtility.common
         Private Objdatamanager As New PayrollUtility.Utilities, ObjException As New PayrollUtility.ExceptionManager
-        Public enable_report_service As Integer = 0
 #End Region
 #Region " Web Form Designer Generated Code "
         'This call is required by the Web Form Designer.
@@ -50,7 +53,6 @@ Namespace Payroll
         Private Sub Page_Load(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles MyBase.Load
             'To check the Session
             Try
-                report_service.Value = "N"
                 hdnusername.Value = Session("UId").ToString
                 Session("PublishedEmpCode") = Nothing
                 ObjCommon.sessionCheck(Form1)
@@ -58,13 +60,6 @@ Namespace Payroll
                 ScriptManager.RegisterStartupScript(Me.Page, GetType(Page), String.Format("StartupScript"), "<script type=""text"">GetAttributeName();</script>", False)
                 'ScriptManager.RegisterStartupScript(Page, GetType(Page), "Key", "<script>GetAttributeName();</script>", False)
                 ScriptManager.RegisterStartupScript(upd1, upd1.GetType(), Guid.NewGuid().ToString(), "CloseDialog();", True)
-                Dim ArrParam(0) As SqlClient.SqlParameter, Dt As New DataTable
-                ArrParam(0) = New SqlParameter("@CompanyDomain", Session("CompCode").ToString) 'CompanyDomain
-                Dt = Objdatamanager.GetDataTableProc("PaySp_GetGCSModuleConfigDetails", ArrParam)
-                If Dt.Rows.Count > 0 And Dt.Columns.Contains("enable_config_report") AndAlso Dt.Rows(0)("enable_config_report") IsNot DBNull.Value Then
-                    enable_report_service = If(Dt.Rows(0)("enable_config_report").ToString() = "Y", 1, 0)
-                End If
-
                 If Not IsPostBack Then
                     PopddlMonth(ddlAEmonth)
                     PopddlMonth(ddlASmonth)
@@ -78,15 +73,18 @@ Namespace Payroll
                     txtpagevalue.Text = "2"
                     EmpDetailsBound()
                     PopulateReportRecord()
-                    Dim IsNewUrl As String
-                    IsNewUrl = IsRptapiConfigured4CSV("Paysp_YearToDate_ForExcel")
-                    If IsNewUrl IsNot Nothing AndAlso IsNewUrl.ToUpper.Trim = "Y" Then
-                        btnDownloadCSV.Visible = True
-                    Else
-                        btnDownloadCSV.Visible = False
-                    End If
                     CheckYTDProcessLock()
                     CheckYTDExcelAlreadyProcessing()
+                    AlreadyGeneratedRegister("IsAlreadyGenerated", hdnProcessType.Value)
+                End If
+                Dim IsNewUrl As String
+                IsNewUrl = IsRptapiConfigured4CSV("Paysp_YearToDate_ForExcel")
+                If IsNewUrl IsNot Nothing AndAlso IsNewUrl.ToUpper.Trim = "Y" Then
+                    btnDownloadCSV.Visible = True
+                    hdnCSV.Value = "Y"
+                Else
+                    btnDownloadCSV.Visible = False
+                    hdnCSV.Value = "N"
                 End If
             Catch ex As Exception
                 ObjException.PublishError("Page_Load()", ex)
@@ -95,7 +93,12 @@ Namespace Payroll
 
         Private Sub btnReset_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles btnReset.Click
             Try
-                Response.Redirect("Rpt_IndEmpSalaryRegister.aspx")
+                spnAlreadyYTDGenerated.InnerText = ""
+                spnAlreadyYTDGeneratedEnd.InnerText = ""
+                trAlreadyReg.Visible = False
+                hdnYtdRegPath.Value = ""
+                hdnYtdRegFileName.Value = ""
+                Response.Redirect("Rpt_IndEmpSalaryRegister.aspx", True)
                 btnEdit.Style.Value = "display:"
                 TrEmpDetails.Style.Value = "display:none"
                 TrFormat.Style.Value = "display:none"
@@ -208,9 +211,14 @@ Namespace Payroll
 
         'This Function used to YTD SALARY REGISTER in excel sheet added by sameer on 21_Nov_2009
         Private Sub GetEmployeeYTD()
+            spnAlreadyYTDGenerated.InnerText = ""
+            spnAlreadyYTDGeneratedEnd.InnerText = ""
+            trAlreadyReg.Visible = False
+            hdnYtdRegPath.Value = ""
+            hdnYtdRegFileName.Value = ""
             Dim ArrParam(22) As SqlClient.SqlParameter, dt As New DataTable, _msg As New List(Of PayrollUtility.UserMessage)
             Dim APIConfigParam(2) As SqlClient.SqlParameter, IsNewUrl As String = "N"
-            Dim AppPathStr As String = HttpRuntime.AppDomainAppVirtualPath.ToString, _array() As String
+            Dim AppPathStr As String = HttpRuntime.AppDomainAppVirtualPath.ToString, _array() As String, MonthFrom As String, MonthTo As String, YearFrom As String, YearTo As String
             _array = Split(AppPathStr, "/")
             AppPathStr = _array(_array.Length - 1)
             Dim IpAddress As String = ObjCommon.nNz(Request.UserHostAddress.ToUpper.ToString).ToString
@@ -223,7 +231,29 @@ Namespace Payroll
             APIConfigParam(2).Direction = ParameterDirection.Output
             Objdatamanager.ExecuteStoredProcMsg("PaySP_ReportAPI_ConfigSel", APIConfigParam)
             IsNewUrl = APIConfigParam(2).Value.ToString
-            IsNewUrl = "Y"
+
+            'Added by Vishal Chauhan 
+            If (rblextrapolate.SelectedValue.ToUpper.Trim <> "Y") Then
+                MonthFrom = ddlmonth.SelectedValue.ToString
+                YearFrom = Right(Trim(ddlmonth.SelectedItem.Text.ToString), 4)
+                MonthTo = ddlmonth1.SelectedValue.ToString
+                YearTo = Right(Trim(ddlmonth1.SelectedItem.Text.ToString), 4)
+            Else
+                'If (USearchMulti.UCTextcode.ToString.Trim().Length <= 1) Then   'In rblextrapolate option user must have to enter empcode
+                '    _msg.Add(New PayrollUtility.UserMessage With {.MessageType = "E", .MessageString = "Empcodes cannot be left blank for extrapolate!"})
+                '    ObjCommon.ShowMessage(_msg)
+                '    Exit Sub
+                'End If
+                If (USearchMulti.UCddlcostcenter.ToString.Trim().Length <= 1) Then   'In rblextrapolate option user must have to select atleast one costcenter
+                    _msg.Add(New PayrollUtility.UserMessage With {.MessageType = "E", .MessageString = "CostCenter cannot be left blank for extrapolate!"})
+                    ObjCommon.ShowMessage(_msg)
+                    Exit Sub
+                End If
+                MonthFrom = ddlASmonth.SelectedValue.ToString
+                YearFrom = Right(Trim(ddlASmonth.SelectedItem.Text.ToString), 4)
+                MonthTo = ddlAEmonth.SelectedValue.ToString
+                YearTo = Right(Trim(ddlAEmonth.SelectedItem.Text.ToString), 4)
+            End If
 
             'If IsDBNull(reportConfigDt.Rows(0).Item("isNewURL")) Or reportConfigDt.Rows(0).Item("isNewURL").ToString().ToUpper.Trim() = "N" Then
             If IsNewUrl = "N" Or IsNewUrl = Nothing Then
@@ -239,10 +269,10 @@ Namespace Payroll
                 ArrParam(8) = New SqlClient.SqlParameter("@fk_unit", USearchMulti.UCddlunit.ToString())
                 ArrParam(9) = New SqlClient.SqlParameter("@salaried", USearchMulti.UCddlsalbasis.ToString())
                 ArrParam(10) = New SqlClient.SqlParameter("@fk_level_Code", USearchMulti.UCddllevel.ToString())
-                ArrParam(11) = New SqlParameter("@FMonth", ddlmonth.SelectedValue.ToString)
-                ArrParam(12) = New SqlParameter("@FYear", Right(Trim(ddlmonth.SelectedItem.Text.ToString), 4))
-                ArrParam(13) = New SqlParameter("@TMonth", ddlmonth1.SelectedValue.ToString)
-                ArrParam(14) = New SqlParameter("@TYear", Right(Trim(ddlmonth1.SelectedItem.Text.ToString), 4))
+                ArrParam(11) = New SqlParameter("@FMonth", MonthFrom)
+                ArrParam(12) = New SqlParameter("@FYear", YearFrom)
+                ArrParam(13) = New SqlParameter("@TMonth", MonthTo)
+                ArrParam(14) = New SqlParameter("@TYear", YearTo)
                 ArrParam(15) = New SqlClient.SqlParameter("@SFYear", Session("Sfindate"))
                 ArrParam(16) = New SqlClient.SqlParameter("@EFYear", Session("Efindate"))
                 ArrParam(17) = New SqlClient.SqlParameter("@EmpType", USearchMulti.UCddlEmp.ToString)
@@ -308,10 +338,10 @@ Namespace Payroll
                  {"fk_unit", USearchMulti.UCddlunit.ToString},
                  {"salaried", USearchMulti.UCddlsalbasis.ToString},
                  {"fk_level_code", USearchMulti.UCddllevel.ToString},
-                 {"fMonth", ddlmonth.SelectedValue.ToString},
-                 {"fYear", Right(Trim(ddlmonth.SelectedItem.Text.ToString), 4)},
-                 {"tMonth", ddlmonth1.SelectedValue.ToString},
-                 {"tYear", Right(Trim(ddlmonth1.SelectedItem.Text.ToString), 4)},
+                 {"fMonth", MonthFrom},
+                 {"fYear", YearFrom},
+                 {"tMonth", MonthTo},
+                 {"tYear", YearTo},
                  {"sFYear", Session("Sfindate")},
                  {"eFYear", Session("Efindate")},
                  {"empType", USearchMulti.UCddlEmp.ToString},
@@ -364,22 +394,12 @@ Namespace Payroll
         Protected Sub btnDownloadCSV_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles btnDownloadCSV.Click
             hdnRptName.Value = "YTD Salary Register CSV"
             hdnFileFormat.Value = "CSV"
-
-
+            GetEmployeeYTD()
         End Sub
         Protected Sub btnexcel_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles btnexcel.Click
             hdnRptName.Value = "YTD Salary Register EXCEL"
             hdnFileFormat.Value = "EXCEL"
-            If enable_report_service = 1 Then
-                report_service.Value = "Y"
-                If Not System.Configuration.ConfigurationManager.AppSettings("ReportServiceDomain") Is Nothing Then
-                    report_service_url.Value = System.Configuration.ConfigurationManager.AppSettings("ReportServiceDomain").ToString
-                End If
-                CallReportService()
-            Else
-                report_service.Value = "N"
-                GetEmployeeYTD()
-            End If
+            GetEmployeeYTD()
         End Sub
         Protected Sub LnkPDF_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles LnkPDF.Click
             Dim _strJava As New StringBuilder, filepath As String, FileName() As String = Nothing, FName As String = ""
@@ -807,7 +827,8 @@ Namespace Payroll
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12
             Try
                 Dim apiUrl As String
-                apiUrl = System.Configuration.ConfigurationManager.AppSettings("ApiRptExcel").ToString & controller
+                'apiUrl = System.Configuration.ConfigurationManager.AppSettings("ApiRptExcel").ToString & controller
+                apiUrl = System.Configuration.ConfigurationManager.AppSettings("HeavyExcel").ToString & controller
                 Dim jobResponse = PostAPICall(apiUrl & "/generate-file", requestBody)
                 Dim jobResponseData = Newtonsoft.Json.JsonConvert.DeserializeObject(Of JobResponse)(jobResponse)
                 JobUniqueId.Value = jobResponseData.JobId.ToString
@@ -823,7 +844,6 @@ Namespace Payroll
                 Objdatamanager.GetDataTableProc("PaySP_ReportApi_ProcessBar", ErrorCaseparams)
                 ScriptManager.RegisterStartupScript(Page, Page.GetType(), "hideModal908", "hideModal();", True)
             End Try
-
         End Sub
 
         Private Sub CallAPIReport(ByVal requestBody As String, ByVal controller As String)
@@ -901,6 +921,52 @@ Namespace Payroll
                 Return "N"
             End Try
         End Function
+        Private Sub AlreadyGeneratedRegister(ByVal ActionType As String, ByVal ProcessType As String)
+            Try
+                spnAlreadyYTDGenerated.InnerText = ""
+                spnAlreadyYTDGeneratedEnd.InnerText = ""
+                trAlreadyReg.Visible = False
+                hdnYtdRegPath.Value = ""
+                hdnYtdRegFileName.Value = ""
+                Dim fle As String()
+                Dim sParam(2) As SqlClient.SqlParameter
+                sParam(0) = New SqlClient.SqlParameter("@UserID", Session("UID").ToString)
+                sParam(1) = New SqlClient.SqlParameter("@Process_Type", ProcessType)
+                sParam(2) = New SqlClient.SqlParameter("@ActionType", ActionType)
+                Dim dt As DataTable = Objdatamanager.GetDataTableProc("PaySP_ReportApi_ProcessBar", sParam)
+                If dt.Rows.Count > 0 Then
+                    fle = Directory.GetFiles(dt.Rows(0)("FilePath").ToString, dt.Rows(0)("FileName").ToString & "*", SearchOption.AllDirectories)
+                    If (fle.Length = 0) Then
+                        Exit Sub
+                    End If
+                    'spnAlreadyYTDGenerated.InnerText = "Last Generated Year to Date Register by " & Session("UID").ToString & " on " & dt.Rows(0)("ExcelCreatDate").ToString & " click here to download "
+                    spnAlreadyYTDGenerated.InnerText = "Click here "
+                    spnAlreadyYTDGeneratedEnd.InnerText = " Last Generated Year to Date Register by " & Session("UID").ToString & " on " & dt.Rows(0)("ExcelCreatDate").ToString & ""
+                    trAlreadyReg.Visible = True
+                    hdnYtdRegPath.Value = dt.Rows(0)("FilePath").ToString
+                    'hdnYtdRegPath.Value = dt.Rows(0)("FilePath").ToString.Replace("\", "\\")
+                    hdnYtdRegFileName.Value = dt.Rows(0)("FileName").ToString
+                End If
+            Catch ex As Exception
+            End Try
+        End Sub
+
+        Protected Sub lnkAlreadyYTDGenerated_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles lnkAlreadyYTDGenerated.Click
+            Dim fle As String(), _msg As New List(Of PayrollUtility.UserMessage)
+            Try
+                fle = Directory.GetFiles(hdnYtdRegPath.Value, hdnYtdRegFileName.Value & "*", SearchOption.AllDirectories)
+                If (fle.Length = 0) Then
+                    _msg.Add(New PayrollUtility.UserMessage With {.MessageType = "E", .MessageString = "File does not exist please re-generate!"})
+                    ObjCommon.ShowMessage(_msg)
+                End If
+                hdfile.Value = hdnYtdRegPath.Value & "~" & hdnYtdRegFileName.Value & "~REGPROCESSBAR"
+                Dim popupScript As String = "<script language='javascript' type='text/javascript'>ShowDownload('" & hdfile.Value & "')</script>"
+                ClientScript.RegisterStartupScript(GetType(String), "PopupScriptExcelYTDReg", popupScript)
+            Catch ex As Exception
+                _msg.Add(New PayrollUtility.UserMessage With {.MessageType = "E", .MessageString = "File does not exist please re-generate!"})
+                ObjCommon.ShowMessage(_msg)
+            End Try
+        End Sub
         Protected Function GetAppPath() As String
             Dim _array() As String, _AppPath As String = HttpRuntime.AppDomainAppVirtualPath.ToString
             _array = Split(_AppPath, "/")
@@ -911,118 +977,5 @@ Namespace Payroll
             Public Property JobId As String
             Public Property StatusUrl As String
         End Class
-
-        Private Sub CallReportService()
-            Try
-                'objCommon.GetDirpath(Session("COMPCODE").ToString)
-                Dim filePath As String = ObjCommon.GetDirpath(Session("COMPCODE").ToString) & "\" & Session("COMPCODE").ToString & "\TempExcelFiles\"
-                Dim apiUrl As String = "", _msg As New List(Of PayrollUtility.UserMessage)
-                If Not System.Configuration.ConfigurationManager.AppSettings("ReportServiceDomain") Is Nothing Then
-                    If System.Configuration.ConfigurationManager.AppSettings("ReportServiceDomain").ToString <> "" Then
-                        apiUrl = System.Configuration.ConfigurationManager.AppSettings("ReportServiceDomain").ToString
-                    End If
-                End If
-                Dim g As String = Guid.NewGuid().ToString()
-                Dim fileName As String = "YTD_SALARY_REGISTER_" & g.Substring(g.Length - 5)
-                report_service_file_name.Value = fileName
-                Dim arprm(5) As SqlClient.SqlParameter
-                arprm(0) = New SqlClient.SqlParameter("@UserID", Session("UID").ToString)
-                arprm(1) = New SqlClient.SqlParameter("@Process_Type", hdnProcessType.Value)
-                arprm(2) = New SqlClient.SqlParameter("@ActionType", "Init")
-                arprm(3) = New SqlClient.SqlParameter("@Sys_IP", "::1")
-                arprm(4) = New SqlClient.SqlParameter("@HostIP", ConfigurationManager.AppSettings("Hostip").ToString())
-                arprm(5) = New SqlClient.SqlParameter("@ProcName", "Paysp_YearToDate_ForExcel")
-                Dim _dt As DataTable = Objdatamanager.GetDataTableProc("PaySP_ReportApi_ProcessBar", arprm)
-                If (_dt.Rows.Count > 0) Then
-                    If (_dt.Rows(0)("IsAbleToStart").ToString = "1" AndAlso _dt.Rows(0)("BatchId").ToString <> "") Then
-                        Dim scripttag As String = "StartProcessbar('" & hdnRptName.Value.Replace("'", "") & "');"
-                        ScriptManager.RegisterStartupScript(Page, Page.GetType(), "openpoocessbar231", scripttag, True)
-                        hdnBatchId.Value = _dt.Rows(0)("BatchId").ToString
-                        btnProgressbarExcel.Visible = False
-                        lblProcessStatusExcel.Text = ""
-                        divSocialExcel.Visible = False
-                    Else
-                        divSocialExcel.Visible = True
-                        lblProcessStatusExcel.Text = hdnRptName.Value.Replace("'", "") & " is already processing. Please wait till the completion."
-                        If (_dt.Rows(0)("UserId").ToString.ToUpper <> Session("UID").ToUpper.ToString) Then
-                            btnProgressbarExcel.Visible = False
-                        Else
-                            btnProgressbarExcel.Visible = True
-                        End If
-                        _msg.Add(New PayrollUtility.UserMessage With {.MessageType = "E", .MessageString = lblProcessStatusExcel.Text})
-                        ObjCommon.ShowMessage(_msg)
-                        Exit Sub
-                    End If
-                End If
-
-                Dim execPlanParams As New Dictionary(Of String, Object) From
-                {
-                 {"HostIP", ConfigurationManager.AppSettings("Hostip").ToString()},
-                 {"pk_emp_code", USearchMulti.UCTextcode.ToString},
-                 {"first_name", USearchMulti.UCTextname.ToString},
-                 {"last_name", ""},
-                 {"fk_costcenter_code", USearchMulti.UCddlcostcenter.ToString},
-                 {"fk_dept_code", USearchMulti.UCddldept.ToString},
-                 {"fk_desig_code", USearchMulti.UCddldesig.ToString},
-                 {"fk_grade_code", USearchMulti.UCddlgrade.ToString},
-                 {"fk_loc_code", USearchMulti.UCddllocation.ToString},
-                 {"Fk_unit", USearchMulti.UCddlunit.ToString},
-                 {"salaried", USearchMulti.UCddlsalbasis.ToString},
-                 {"fk_level_Code", USearchMulti.UCddllevel.ToString},
-                 {"FMonth", ddlmonth.SelectedValue.ToString},
-                 {"FYear", Right(Trim(ddlmonth.SelectedItem.Text.ToString), 4)},
-                 {"TMonth", ddlmonth1.SelectedValue.ToString},
-                 {"TYear", Right(Trim(ddlmonth1.SelectedItem.Text.ToString), 4)},
-                 {"SFYear", Session("Sfindate")},
-                 {"EFYear", Session("Efindate")},
-                 {"EmpType", USearchMulti.UCddlEmp.ToString},
-                 {"UserGroup", Session("UGroup")},
-                 {"userid", Session("uid").ToString},
-                 {"SameMonthArrPay", CType(IIf(chkArrSmeMnth.Checked = True, "Y", "N"), String)},
-                 {"Extrapolate", rblextrapolate.SelectedValue.ToString},
-                 {"PanApp", CType(IIf(chkEmpdet.Items(9).Selected = True, "Y", "N"), String)},
-                 {"Sys_IP", ""},
-                 {"IsAPI", "Y"},
-                 {"BatchId", hdnBatchId.Value.ToString}
-                }
-
-                Dim executionPlan As New Dictionary(Of String, Object) From {
-                    {"reportName", "FlatReport"},
-                    {"procedureName", "Paysp_YearToDate_ForExcel_backup"},
-                    {"executionPlanParameters", execPlanParams},
-                    {"writerLibrary", "FlatAsposeCellsExcelWriter"}}
-
-                Dim payload As New Dictionary(Of String, Object) From {
-                {"fileName", fileName},
-                {"filePath", ""},
-                {"fileType", "xlsx"},
-                {"filePrefix", "YTD_SALARY_REGISTER_"},
-                {"progressType", "YTDSALREG"},
-                {"statusUrl", "/api/YTDSalaryRegister/status/"},
-                {"executionPlan", executionPlan},
-                {"compCode", Session("CompCode").ToString()}
-                }
-                Dim requestBody As String = JsonConvert.SerializeObject(payload)
-                apiUrl = apiUrl & "/api/service/payrollReportFramework/generateReportAsync"
-                Try
-
-                    Dim controller As String = "YTDSalaryRegister"
-
-
-                    Dim AppPathStr As String = HttpRuntime.AppDomainAppVirtualPath.ToString, _array() As String
-                    _array = Split(AppPathStr, "/")
-                    AppPathStr = _array(_array.Length - 1)
-                    Dim jobResponse = PostAPICall(apiUrl, requestBody)
-                    Dim jobResponseData = Newtonsoft.Json.JsonConvert.DeserializeObject(Of JobResponse)(jobResponse)
-                    JobUniqueId.Value = jobResponseData.JobId.ToString
-                    ScriptManager.RegisterStartupScript(Page, Page.GetType(), "openpopup918", "OpenAttendanceProcessBar('" & AppPathStr & "','" & hdnProcessType.Value & "', '" & hdnRptName.Value.Replace("'", "") & "');", True)
-                Catch ex As Exception
-                    ObjException.PublishError("Error in CallReportService()", ex)
-                End Try
-            Catch ex As Exception
-                ObjException.PublishError("Error in CallReportService()", ex)
-            End Try
-
-        End Sub
     End Class
 End Namespace

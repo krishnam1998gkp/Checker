@@ -46,8 +46,7 @@
 '136.  Kangkan Lahkar       20 July 2025  Slip with leave details added, progress bar added
 '137.  Ritu Malik           30 jul 2025   regarding Dynamic register CSV
 '138.  Vishal Chauhan       13 Aug 2025   Report API tag changed as "HeavyExcel" instead of "ApiRptExcel"
-'139.  Kangkan Lahkar       14 Aug 2025   Resolve when progress bar should be displayed. For Tax sheet forecast - merge option, error fix
-'                                         UI added to show current mail progress. With leave details and mail, show initial progress bar only for module config on
+'139.  Vishal Chauhan       19 Aug 2025   Report Type onchange with E-Mail Payslip,TDS-Estimation Slip issue fixed
 '==============================================================================================================================================================
 Imports System
 Imports System.Activities.Expressions
@@ -153,8 +152,6 @@ Namespace Payroll
                 CheckExcelProcessbarAlreadyProcessing()
                 CheckProcessLocked()
                 ShowPGP()
-                LoadMailContentPopUp()
-                populateModuleConfig()
             End If
             If DdlreportType.SelectedValue = "R" Then
                 'TdLog.Style.Value = "display:"
@@ -171,94 +168,6 @@ Namespace Payroll
             litJava.Text = ""
             lit.Text = ""
         End Sub
-
-        Private Function populateModuleConfig()
-            ' to be done
-            Dim dt As New DataTable
-            Dim _parm(0) As SqlClient.SqlParameter
-            _parm(0) = New SqlParameter("@CompanyDomain", Session("compCode"))
-            dt = _ObjData.GetDataTableProc("PaySp_GetGCSModuleConfigDetails", _parm)
-            Dim module_config As String = ""
-            If dt.Rows.Count > 0 And dt.Columns.Contains("enable_config") AndAlso dt.Rows(0)("enable_config") IsNot DBNull.Value Then
-                module_config = dt.Rows(0)("enable_config")
-            End If
-            ScriptManager.RegisterStartupScript(Page, Page.GetType(), "setModuleConfig", "setModuleConfig('" & module_config & "');", True)
-
-        End Function
-        Private Function resolveSlipName(ByVal PaySlipType As String) As String
-            '{"TAXSLIP", "FORCAST", "SLIPWOLVE", "SLIPTDSV", "SLIPWILVE"}
-            If PaySlipType = "TAXSLIP" Then
-                Return "Salary Slip With Tax Details"
-            ElseIf PaySlipType = "FORCAST" Then
-                Return "Tax sheet-forecast"
-            ElseIf PaySlipType = "SLIPWOLVE" Then
-                Return "Pay Slip Without Leave Details"
-            ElseIf PaySlipType = "SLIPTDSV" Then
-                Return "TDS Estimation Slip"
-            ElseIf PaySlipType = "SLIPWILVE" Then
-                Return "Pay Slip With Leave Details"
-            End If
-            Return "Pay Slip"
-
-        End Function
-        Private Sub LoadMailContentPopUp()
-            Dim dt As New DataTable
-            Dim _parm(2) As SqlClient.SqlParameter
-            _parm(0) = New SqlParameter("@flag", "M")
-            _parm(1) = New SqlParameter("@compCode", Session("compCode").ToString)
-            _parm(2) = New SqlParameter("@UserId", Session("UID").ToString)
-            dt = _ObjData.GetDataTableProc("PaySP_GetGcsEmailProcess", _parm)
-
-            Dim htmlBuilder As New StringBuilder()
-
-
-            If dt.Rows.Count > 0 Then
-                htmlBuilder.Append("<table style='width:100%;padding:0; border-collapse: collapse;' border=1>")
-                htmlBuilder.Append("<colgroup> <col style = 'width:25%'> <col style = 'width:15%'><col style = 'width:15%'><col style = 'width:15%'><col style = 'width:15%'><col style = 'width:15%'>   </colgroup>")
-                htmlBuilder.Append("<tr class ='DataGridHeaderStyle'><td class='nobreak'>Salary Slip Details</td><td>Month</td> <td>Year</td> <td>Total to sent</td> <td>Email sent</td> <td>Failed</td></tr>")
-
-                Dim i As Integer = 0
-
-                For Each row As DataRow In dt.Rows
-                    Dim totalToProcess As String = row("total_to_process").ToString()
-                    Dim processType As String = row("Process_Type").ToString()
-                    Dim sentCount As String = row("sentCount").ToString()
-                    Dim notSentCount As String = row("failureCount").ToString()
-                    Dim month As String = MonthIntToString(Convert.ToInt32(row("mm")))
-                    Dim yyyy As String = row("YYYY")
-                    Dim process_split = processType.Split("_"c)
-
-                    If i Mod 2 = 0 Then
-                        htmlBuilder.AppendFormat("<tr class='AlternatingRowStyle'><td class='nobreak'>{0}</td> <td>{1}</td> <td>{2}</td><td>{3}</td><td>{4}</td> <td>{5}</td> </tr>",
-                                  resolveSlipName(process_split(0)), month, yyyy, totalToProcess, sentCount, notSentCount)
-                    Else
-                        htmlBuilder.AppendFormat("<tr class='DataGridItemStyle'><td class='nobreak'>{0}</td> <td> {1}</td><td> {2}</td><td>{3}</td><td>{4}</td>  <td>{5}</td> </tr>",
-                                 resolveSlipName(process_split(0)), month, yyyy, totalToProcess, sentCount, notSentCount)
-
-                    End If
-                    i = i + 1
-                Next
-                htmlBuilder.Append("</table>")
-                mailPopUpContent.Text = htmlBuilder.ToString()
-                ScriptManager.RegisterStartupScript(Page, Page.GetType(), "initialiseEmailProcessUpdate", "initiliaseEmailProcessStatus();", True)
-            Else
-                infoBtn.Style.Value = "display:none;"
-
-            End If
-        End Sub
-
-        ' Added by Kangkan Lahkar
-        Private Function MonthIntToString(ByVal monthNumber As Integer) As String
-            Try
-                If monthNumber < 1 Or monthNumber > 12 Then
-                    Return String.Empty
-                End If
-                Return New DateTime(2000, monthNumber, 1).ToString("MMMM", System.Globalization.CultureInfo.InvariantCulture)
-            Catch ex As Exception
-                Return String.Empty
-            End Try
-        End Function
-
         'Added by praveen on 17 Aug 2011 to populate ddlreporttype.
         Private Sub populateDdlreportType()
             Try
@@ -677,133 +586,6 @@ Namespace Payroll
                 '_objExceptionMgr.PublishError("For gebnerate the excel file (fnExportTo_ExcelXML())", ex)
             End Try
         End Sub
-
-        'Added by Kangkan Lahkar
-        Private Sub CallReportService(ByVal type As String)
-            Try
-                Dim filePath As String = (Server.MapPath(Request.ApplicationPath).ToString & "\" & Session("COMPCODE").ToString & "\TempExcelFiles\").Replace("\", "/")
-                Dim apiUrl As String = "", _msg As New List(Of PayrollUtility.UserMessage)
-                If Not System.Configuration.ConfigurationManager.AppSettings("ReportServiceDomain") Is Nothing Then
-                    If System.Configuration.ConfigurationManager.AppSettings("ReportServiceDomain").ToString <> "" Then
-                        apiUrl = System.Configuration.ConfigurationManager.AppSettings("ReportServiceDomain").ToString
-                        report_service_url.Value = apiUrl
-                    End If
-                End If
-
-
-                Dim arprm(5) As SqlClient.SqlParameter
-                arprm(0) = New SqlClient.SqlParameter("@UserID", Session("UID").ToString)
-                arprm(1) = New SqlClient.SqlParameter("@Process_Type", GetApiProcessType(DDLPaySlipType.SelectedValue))
-                arprm(2) = New SqlClient.SqlParameter("@ActionType", "Init")
-                arprm(3) = New SqlClient.SqlParameter("@Sys_IP", "::1")
-                arprm(4) = New SqlClient.SqlParameter("@HostIP", ConfigurationManager.AppSettings("Hostip").ToString())
-                arprm(5) = New SqlClient.SqlParameter("@ProcName", "Paysp_YearToDate_ForExcel")
-                Dim _dt As DataTable = _ObjData.GetDataTableProc("PaySP_ReportApi_ProcessBar", arprm)
-                If (_dt.Rows.Count > 0) Then
-                    If (_dt.Rows(0)("IsAbleToStart").ToString = "1" AndAlso _dt.Rows(0)("BatchId").ToString <> "") Then
-                        Dim scripttag As String = "StartProcessbar('" & DDLPaySlipType.SelectedItem.Text.Replace("'", "") & "');"
-                        ScriptManager.RegisterStartupScript(Page, Page.GetType(), "openpooce89sbar231", scripttag, True)
-                        hdnBatchId.Value = _dt.Rows(0)("BatchId").ToString
-                        btnProgressbarExcel.Visible = False
-                        divSocialExcel.Visible = False
-                        lblProcessStatusExcel.Text = ""
-                    Else
-                        divSocialExcel.Visible = True
-                        lblProcessStatusExcel.Text = DDLPaySlipType.SelectedItem.Text.Replace("'", "") & " is already processing. Please wait till the completion."
-                        If (_dt.Rows(0)("UserId").ToString.ToUpper <> Session("UID").ToUpper.ToString) Then
-                            btnProgressbarExcel.Visible = False
-                        Else
-                            btnProgressbarExcel.Visible = True
-                        End If
-                        _msg.Add(New PayrollUtility.UserMessage With {.MessageType = "E", .MessageString = lblProcessStatusExcel.Text})
-                        _objCommon.ShowMessage(_msg)
-                        ScriptManager.RegisterStartupScript(Me.Page, GetType(Page), "refreshExeclProcessStatus99", "OpenAttendanceProcessBar('" & GetApiProcessType(DDLPaySlipType.SelectedValue) & "')", True)
-                        Exit Sub
-                    End If
-                End If
-
-
-                Dim execPlanParams As New Dictionary(Of String, Object) From
-                {
-                  {"fk_costcenter_code", USearch.UCddlcostcenter.ToString},
-                  {"fk_loc_code", USearch.UCddllocation.ToString},
-                  {"Fk_unit", USearch.UCddlunit.ToString},
-                  {"salaried", USearch.UCddlsalbasis.ToString},
-                  {"pk_emp_code", USearch.UCTextcode.ToString},
-                  {"fk_dept_code", USearch.UCddldept.ToString},
-                  {"fk_desig_code", USearch.UCddldesig.ToString},
-                  {"fk_grade_code", USearch.UCddlgrade.ToString},
-                  {"fk_level_Code", USearch.UCddllevel.ToString},
-                  {"month", _objCommon.nNz(ddlMonthYear.SelectedValue.ToString)},
-                  {"year", Right(Trim(ddlMonthYear.SelectedItem.Text.ToString), 4)},
-                  {"first_name", IIf(UCase(USearch.UCrbtfirst.ToString()) = "F", USearch.UCTextname.ToString(), "")},
-                  {"last_name", IIf(UCase(USearch.UCrbtlast.ToString()) = "L", USearch.UCTextname.ToString(), "")},
-                  {"Hold", "N"},
-                  {"UserGroup", Session("Ugroup").ToString},
-                  {"EmpStatus", "L"},
-                  {"RepID", DDLPaySlipType.SelectedValue.ToString},
-                  {"sngclickRptId", 0},
-                  {"userid", Session("UID").ToString},
-                  {"BatchId", hdnBatchId.Value.ToString},
-                  {"Sys_IP", ""},
-                  {"HostIP", ""},
-                  {"IsAPI", "Y"}
-                }
-
-                Dim g As String = Guid.NewGuid().ToString()
-                Dim fileName As String = "SalaryRegister_" & g.Substring(g.Length - 5)
-                Dim proc_name As String = "PaySP_SalaryRegInExcel_backup"
-                Dim progress_type As String = "SALARYREGISTER"
-                Dim success_msg As String = "Excel file for Salary Register generated successfully."
-                If type = "21" Then
-                    proc_name = "PaySP_SalaryRegInExcel_backup"
-                ElseIf type = "38" Then
-                    fileName = "SalaryRegisterDynamic_" & g.Substring(g.Length - 5)
-                    proc_name = "PaySP_SalaryRegInExcel_Dynamic_backup"
-                    progress_type = "DYNAMICSALREG"
-                    success_msg = "Excel file for Salary Register (Dynamic) generated successfully."
-                End If
-                report_service_file_name.Value = fileName
-                Dim executionPlan As New Dictionary(Of String, Object) From {
-                    {"reportName", "FlatReport"},
-                    {"procedureName", proc_name},
-                    {"executionPlanParameters", execPlanParams},
-                    {"writerLibrary", "SalaryRegInExcelWriter"}}
-
-                Dim payload As New Dictionary(Of String, Object) From {
-                {"fileName", fileName},
-                {"filePath", ""},
-                {"fileType", "xlsx"},
-                {"progressType", progress_type},
-                {"statusUrl", "/api/YTDSalaryRegister/status/"},
-                {"executionPlan", executionPlan},
-                {"compCode", Session("CompCode").ToString()},
-                {"successMessage", success_msg},
-                {"showColor", rbtshowclr.SelectedValue.ToString.ToUpper}
-                }
-                Dim requestBody As String = JsonConvert.SerializeObject(payload)
-                apiUrl = apiUrl & "/api/service/payrollReportFramework/generateReportAsync"
-
-                Try
-
-                    Dim controller As String = "YTDSalaryRegister"
-
-
-                    Dim AppPathStr As String = HttpRuntime.AppDomainAppVirtualPath.ToString, _array() As String
-                    _array = Split(AppPathStr, "/")
-                    AppPathStr = _array(_array.Length - 1)
-                    Dim jobResponse = PostAPICall(apiUrl, requestBody)
-                    Dim jobResponseData = Newtonsoft.Json.JsonConvert.DeserializeObject(Of JobResponse)(jobResponse)
-                    JobUniqueId.Value = jobResponseData.JobId.ToString
-                    ScriptManager.RegisterStartupScript(Page, Page.GetType(), "openpopup9181", "OpenAttendanceProcessBar('" & AppPathStr & "','" & GetApiProcessType(DDLPaySlipType.SelectedValue) & "', '" & DDLPaySlipType.SelectedItem.Text.Replace("'", "") & "');", True)
-                Catch ex As Exception
-
-                End Try
-            Catch ex As Exception
-
-            End Try
-
-        End Sub
         Private Sub btnpreview_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles btnPreview.Click
             Dim ds As New DataSet, arrparam(16) As SqlClient.SqlParameter, stringWrite As New System.IO.StringWriter, myHTMLTextWriter As New System.Web.UI.HtmlTextWriter(stringWrite) _
             , arrcode() As String = Nothing, countemp As Integer = 0, empcode As String = "", lstitem As ListItem, paycodeSel1 As String = "", lstitem1 As ListItem _
@@ -853,157 +635,134 @@ Namespace Payroll
             EmpLName = IIf(UCase(USearch.UCrbtlast.ToString()) = "L", USearch.UCTextname.ToString(), "")
             EmpType = USearch.UCddlEmp.ToString()
             Hold = ddlshowsal.SelectedValue.ToString
-            ' To add report service
-            Dim enable_report_service As Integer = 0
-            Dim _arrParam(0) As SqlClient.SqlParameter, _Dt1 As New DataTable
-            _arrParam(0) = New SqlParameter("@CompanyDomain", Session("CompCode").ToString)
-            '_ObjData.GetDataTableProc("PaySp_GetGCSModuleConfigDetails", _parm)
-            _Dt1 = _ObjData.GetDataTableProc("PaySp_GetGCSModuleConfigDetails", _arrParam)
-            If _Dt1.Rows.Count > 0 And _Dt1.Columns.Contains("enable_config_report") AndAlso _Dt1.Rows(0)("enable_config_report") IsNot DBNull.Value Then
-                enable_report_service = If(_Dt1.Rows(0)("enable_config_report").ToString() = "Y", 1, 0)
-                If enable_report_service = 1 Then
-                    report_service.Value = "Y"
-                Else
-                    report_service.Value = "N"
-                End If
-            Else
-                report_service.Value = "N"
-            End If
             If DDLPaySlipType.SelectedValue = "21" Then
+                'Added by Debargha on 21-Oct-2024
+                APIConfigParam(0) = New SqlClient.SqlParameter("@SP_Name", "PaySP_SalaryRegInExcel")
+                APIConfigParam(1) = New SqlClient.SqlParameter("@ReportName", "HRD Report")
+                APIConfigParam(2) = New SqlClient.SqlParameter("@IsNewURL", SqlDbType.VarChar, 1)
+                APIConfigParam(2).Direction = ParameterDirection.Output
+                _ObjData.ExecuteStoredProcMsg("PaySP_ReportAPI_ConfigSel", APIConfigParam)
+                IsNewUrl = APIConfigParam(2).Value.ToString
+                If IsNewUrl = Nothing OrElse IsNewUrl = "N" Then
+                    arrparam(0) = New SqlParameter("@fk_costcenter_code", USearch.UCddlcostcenter.ToString())
+                    arrparam(1) = New SqlParameter("@fk_loc_code", USearch.UCddllocation.ToString())
+                    arrparam(2) = New SqlParameter("@fk_unit", USearch.UCddlunit.ToString())
+                    arrparam(3) = New SqlParameter("@salaried", USearch.UCddlsalbasis.ToString())
+                    arrparam(4) = New SqlParameter("@pk_emp_code", USearch.UCTextcode.ToString)
+                    arrparam(5) = New SqlParameter("@fk_dept_code", USearch.UCddldept.ToString())
+                    arrparam(6) = New SqlParameter("@fk_desig_code", USearch.UCddldesig.ToString())
+                    arrparam(7) = New SqlParameter("@fk_grade_code", USearch.UCddlgrade.ToString())
+                    arrparam(8) = New SqlParameter("@fk_level_Code", USearch.UCddllevel.ToString())
+                    arrparam(9) = New SqlClient.SqlParameter("@month", _objCommon.nNz(ddlMonthYear.SelectedValue.ToString))
+                    arrparam(10) = New SqlClient.SqlParameter("@year", Right(Trim(ddlMonthYear.SelectedItem.Text.ToString), 4))
+                    arrparam(11) = New SqlParameter("@first_name", IIf(UCase(USearch.UCrbtfirst.ToString()) = "F", USearch.UCTextname.ToString(), ""))
+                    arrparam(12) = New SqlParameter("@last_name", IIf(UCase(USearch.UCrbtlast.ToString()) = "L", USearch.UCTextname.ToString(), ""))
+                    arrparam(13) = New SqlParameter("@Hold", ddlshowsal.SelectedValue.ToString)
+                    arrparam(14) = New SqlParameter("@UserGroup", Session("Ugroup").ToString)
+                    arrparam(15) = New SqlParameter("@EmpStatus", USearch.UCddlEmp.ToString)
+                    arrparam(16) = New SqlParameter("@RepID", DDLPaySlipType.SelectedValue.ToString)
+                    ds = _ObjData.GetDataSetProc("PaySP_SalaryRegInExcel", arrparam)
+                    If ds.Tables(0).Rows.Count > 0 Then
+                        'Geeta2012
+                        Dim filename As String = "", _sw As StreamWriter, complexID As Guid = Guid.NewGuid()
 
-                If enable_report_service = 1 Then
-                    CallReportService(DDLPaySlipType.SelectedValue)
-                Else
-                    'Added by Debargha on 21-Oct-2024
-                    APIConfigParam(0) = New SqlClient.SqlParameter("@SP_Name", "PaySP_SalaryRegInExcel")
-                    APIConfigParam(1) = New SqlClient.SqlParameter("@ReportName", "HRD Report")
-                    APIConfigParam(2) = New SqlClient.SqlParameter("@IsNewURL", SqlDbType.VarChar, 1)
-                    APIConfigParam(2).Direction = ParameterDirection.Output
-                    _ObjData.ExecuteStoredProcMsg("PaySP_ReportAPI_ConfigSel", APIConfigParam)
-                    IsNewUrl = APIConfigParam(2).Value.ToString
-                    If IsNewUrl = Nothing OrElse IsNewUrl = "N" Then
-                        arrparam(0) = New SqlParameter("@fk_costcenter_code", USearch.UCddlcostcenter.ToString())
-                        arrparam(1) = New SqlParameter("@fk_loc_code", USearch.UCddllocation.ToString())
-                        arrparam(2) = New SqlParameter("@fk_unit", USearch.UCddlunit.ToString())
-                        arrparam(3) = New SqlParameter("@salaried", USearch.UCddlsalbasis.ToString())
-                        arrparam(4) = New SqlParameter("@pk_emp_code", USearch.UCTextcode.ToString)
-                        arrparam(5) = New SqlParameter("@fk_dept_code", USearch.UCddldept.ToString())
-                        arrparam(6) = New SqlParameter("@fk_desig_code", USearch.UCddldesig.ToString())
-                        arrparam(7) = New SqlParameter("@fk_grade_code", USearch.UCddlgrade.ToString())
-                        arrparam(8) = New SqlParameter("@fk_level_Code", USearch.UCddllevel.ToString())
-                        arrparam(9) = New SqlClient.SqlParameter("@month", _objCommon.nNz(ddlMonthYear.SelectedValue.ToString))
-                        arrparam(10) = New SqlClient.SqlParameter("@year", Right(Trim(ddlMonthYear.SelectedItem.Text.ToString), 4))
-                        arrparam(11) = New SqlParameter("@first_name", IIf(UCase(USearch.UCrbtfirst.ToString()) = "F", USearch.UCTextname.ToString(), ""))
-                        arrparam(12) = New SqlParameter("@last_name", IIf(UCase(USearch.UCrbtlast.ToString()) = "L", USearch.UCTextname.ToString(), ""))
-                        arrparam(13) = New SqlParameter("@Hold", ddlshowsal.SelectedValue.ToString)
-                        arrparam(14) = New SqlParameter("@UserGroup", Session("Ugroup").ToString)
-                        arrparam(15) = New SqlParameter("@EmpStatus", USearch.UCddlEmp.ToString)
-                        arrparam(16) = New SqlParameter("@RepID", DDLPaySlipType.SelectedValue.ToString)
-                        ds = _ObjData.GetDataSetProc("PaySP_SalaryRegInExcel", arrparam)
-                        If ds.Tables(0).Rows.Count > 0 Then
-                            'Geeta2012
-                            Dim filename As String = "", _sw As StreamWriter, complexID As Guid = Guid.NewGuid()
-
-                            filename = Server.MapPath(Request.ApplicationPath) & "\" & Session("COMPCODE").ToString & "\Documents\Salary_Register" & "_" & Right(complexID.ToString, 6) & ".xls"
-                            If System.IO.File.Exists(filename) Then
-                                System.IO.File.Delete(filename)
-                            End If
-                            _sw = New StreamWriter(filename)
-                            ExportToExcelXML(ds, _sw)
-                            _sw.Close()
-                            _sw.Dispose()
-
-                            Response.Clear()
-                            Response.BufferOutput = False
-
-                            'Dim ReadmeText As [String] = "Hello!" & vbLf & vbLf & "This is a README..." & DateTime.Now.ToString("G")
-                            Response.ContentType = "application/zip"
-                            Response.AddHeader("content-disposition", "filename=Salary_Register.zip")
-                            Using zip As New ZipFile()
-                                zip.AddFile(filename, "Salary_Register")
-                                zip.Save(Response.OutputStream)
-                            End Using
-
-                            If File.Exists(filename) Then
-                                File.Delete(filename)
-                            End If
-
-                            lblmsg.Text = ""
-
-
-                            Response.End()
-                            'Response.Close()
-                        Else
-                            _objCommon.ShowMessage("M", lblmsg, "No record(s) Found according to the selection criteria !")
+                        filename = Server.MapPath(Request.ApplicationPath) & "\" & Session("COMPCODE").ToString & "\Documents\Salary_Register" & "_" & Right(complexID.ToString, 6) & ".xls"
+                        If System.IO.File.Exists(filename) Then
+                            System.IO.File.Delete(filename)
                         End If
-                        'New report for Monthly Excel sheet with dynamic column display,Added by praveen on 19 Feb 2013.
+                        _sw = New StreamWriter(filename)
+                        ExportToExcelXML(ds, _sw)
+                        _sw.Close()
+                        _sw.Dispose()
+
+                        Response.Clear()
+                        Response.BufferOutput = False
+
+                        'Dim ReadmeText As [String] = "Hello!" & vbLf & vbLf & "This is a README..." & DateTime.Now.ToString("G")
+                        Response.ContentType = "application/zip"
+                        Response.AddHeader("content-disposition", "filename=Salary_Register.zip")
+                        Using zip As New ZipFile()
+                            zip.AddFile(filename, "Salary_Register")
+                            zip.Save(Response.OutputStream)
+                        End Using
+
+                        If File.Exists(filename) Then
+                            File.Delete(filename)
+                        End If
+
+                        lblmsg.Text = ""
+
+
+                        Response.End()
+                        'Response.Close()
                     Else
-                        Dim arprm(7) As SqlClient.SqlParameter, apiurl As String
-                        arprm(0) = New SqlClient.SqlParameter("@UserID", Session("UID").ToString)
-                        arprm(1) = New SqlClient.SqlParameter("@Process_Type", GetApiProcessType(DDLPaySlipType.SelectedValue))
-                        arprm(2) = New SqlClient.SqlParameter("@ActionType", "Init")
-                        arprm(3) = New SqlClient.SqlParameter("@Sys_IP", "::1")
-                        arprm(4) = New SqlClient.SqlParameter("@HostIP", ConfigurationManager.AppSettings("Hostip").ToString())
-                        arprm(5) = New SqlClient.SqlParameter("@ProcName", "PaySP_SalaryRegInExcel")
-                        arprm(6) = New SqlClient.SqlParameter("@DdlRptName", DDLPaySlipType.SelectedItem.Text.Replace("'", ""))
-                        arprm(7) = New SqlClient.SqlParameter("@DdlRptId", DDLPaySlipType.SelectedValue)
-                        Dim _dt As DataTable = _ObjData.GetDataTableProc("PaySP_ReportApi_ProcessBar", arprm)
-                        If (_dt.Rows.Count > 0) Then
-                            If (_dt.Rows(0)("IsAbleToStart").ToString = "1" AndAlso _dt.Rows(0)("BatchId").ToString <> "") Then
-                                Dim scripttag As String = "StartProcessbar('" & DDLPaySlipType.SelectedItem.Text.Replace("'", "") & "');"
-                                ScriptManager.RegisterStartupScript(Page, Page.GetType(), "openpooce89sbar231", scripttag, True)
-                                hdnBatchId.Value = _dt.Rows(0)("BatchId").ToString
-                                btnProgressbarExcel.Visible = False
-                                divSocialExcel.Visible = False
-                                lblProcessStatusExcel.Text = ""
-                                apiurl = _dt.Rows(0)("apiurl").ToString
-                            Else
-                                divSocialExcel.Visible = True
-                                lblProcessStatusExcel.Text = DDLPaySlipType.SelectedItem.Text.Replace("'", "") & " is already processing. Please wait till the completion."
-                                If (_dt.Rows(0)("UserId").ToString.ToUpper <> Session("UID").ToUpper.ToString) Then
-                                    btnProgressbarExcel.Visible = False
-                                Else
-                                    btnProgressbarExcel.Visible = True
-                                End If
-                                _msg.Add(New PayrollUtility.UserMessage With {.MessageType = "E", .MessageString = lblProcessStatusExcel.Text})
-                                _objCommon.ShowMessage(_msg)
-                                ScriptManager.RegisterStartupScript(Me.Page, GetType(Page), "refreshExeclProcessStatus99", "ShowExcelLockSummaryDetails('" & GetApiProcessType(DDLPaySlipType.SelectedValue) & "')", True)
-                                Exit Sub
-                            End If
-                        End If
-                        Dim keyValuePairs As New Dictionary(Of String, Object) From {
-                            {"hostIp", ConfigurationManager.AppSettings("Hostip").ToString()},
-                            {"userId", HttpContext.Current.Session("UID").ToString()},
-                            {"moduleType", HttpContext.Current.Session("ModuleType").ToString()},
-                            {"domainName", Session("CompCode").ToString},
-                            {"showClr", rbtshowclr.SelectedValue.ToString.ToUpper},
-                            {"fk_costcenter_code", USearch.UCddlcostcenter.ToString()},
-                            {"fk_loc_code", USearch.UCddllocation.ToString()},
-                            {"fk_unit", USearch.UCddlunit.ToString()},
-                            {"salaried", USearch.UCddlsalbasis.ToString()},
-                            {"pk_emp_code", USearch.UCTextcode.ToString.ToString},
-                            {"fk_dept_code", USearch.UCddldept.ToString()},
-                            {"fk_desig_code", USearch.UCddldesig.ToString()},
-                            {"fk_grade_code", USearch.UCddlgrade.ToString()},
-                            {"fk_level_code", USearch.UCddllevel.ToString()},
-                            {"month", _objCommon.nNz(ddlMonthYear.SelectedValue.ToString)},
-                            {"year", Right(Trim(ddlMonthYear.SelectedItem.Text.ToString), 4)},
-                            {"firstName", IIf(UCase(USearch.UCrbtfirst.ToString()) = "F", USearch.UCTextname.ToString(), "")},
-                            {"lastName", IIf(UCase(USearch.UCrbtlast.ToString()) = "L", USearch.UCTextname.ToString(), "")},
-                            {"hold", ddlshowsal.SelectedValue.ToString},
-                            {"userGroup", Session("Ugroup").ToString},
-                            {"empStatus", USearch.UCddlEmp.ToString},
-                            {"repId", DDLPaySlipType.SelectedValue.ToString},
-                            {"BatchId", hdnBatchId.Value.ToString},
-                            {"FileFormat", hdnFileFormat.Value.ToString}
-                        }
-                        Dim requestBody As String = JsonConvert.SerializeObject(keyValuePairs)
-                        'Modified by Vishal Chauhan to call HeavyExcel API
-                        CallReportAPIOnNewThreadHeavyExcel(requestBody, "StaticSalRegister", AppPathStr, apiurl)
+                        _objCommon.ShowMessage("M", lblmsg, "No record(s) Found according to the selection criteria !")
                     End If
+                    'New report for Monthly Excel sheet with dynamic column display,Added by praveen on 19 Feb 2013.
+                Else
+                    Dim arprm(7) As SqlClient.SqlParameter, apiurl As String
+                    arprm(0) = New SqlClient.SqlParameter("@UserID", Session("UID").ToString)
+                    arprm(1) = New SqlClient.SqlParameter("@Process_Type", GetApiProcessType(DDLPaySlipType.SelectedValue))
+                    arprm(2) = New SqlClient.SqlParameter("@ActionType", "Init")
+                    arprm(3) = New SqlClient.SqlParameter("@Sys_IP", "::1")
+                    arprm(4) = New SqlClient.SqlParameter("@HostIP", ConfigurationManager.AppSettings("Hostip").ToString())
+                    arprm(5) = New SqlClient.SqlParameter("@ProcName", "PaySP_SalaryRegInExcel")
+                    arprm(6) = New SqlClient.SqlParameter("@DdlRptName", DDLPaySlipType.SelectedItem.Text.Replace("'", ""))
+                    arprm(7) = New SqlClient.SqlParameter("@DdlRptId", DDLPaySlipType.SelectedValue)
+                    Dim _dt As DataTable = _ObjData.GetDataTableProc("PaySP_ReportApi_ProcessBar", arprm)
+                    If (_dt.Rows.Count > 0) Then
+                        If (_dt.Rows(0)("IsAbleToStart").ToString = "1" AndAlso _dt.Rows(0)("BatchId").ToString <> "") Then
+                            Dim scripttag As String = "StartProcessbar('" & DDLPaySlipType.SelectedItem.Text.Replace("'", "") & "');"
+                            ScriptManager.RegisterStartupScript(Page, Page.GetType(), "openpooce89sbar231", scripttag, True)
+                            hdnBatchId.Value = _dt.Rows(0)("BatchId").ToString
+                            btnProgressbarExcel.Visible = False
+                            divSocialExcel.Visible = False
+                            lblProcessStatusExcel.Text = ""
+                            apiurl = _dt.Rows(0)("apiurl").ToString
+                        Else
+                            divSocialExcel.Visible = True
+                            lblProcessStatusExcel.Text = DDLPaySlipType.SelectedItem.Text.Replace("'", "") & " is already processing. Please wait till the completion."
+                            If (_dt.Rows(0)("UserId").ToString.ToUpper <> Session("UID").ToUpper.ToString) Then
+                                btnProgressbarExcel.Visible = False
+                            Else
+                                btnProgressbarExcel.Visible = True
+                            End If
+                            _msg.Add(New PayrollUtility.UserMessage With {.MessageType = "E", .MessageString = lblProcessStatusExcel.Text})
+                            _objCommon.ShowMessage(_msg)
+                            ScriptManager.RegisterStartupScript(Me.Page, GetType(Page), "refreshExeclProcessStatus99", "ShowExcelLockSummaryDetails('" & GetApiProcessType(DDLPaySlipType.SelectedValue) & "')", True)
+                            Exit Sub
+                        End If
+                    End If
+                    Dim keyValuePairs As New Dictionary(Of String, Object) From {
+                        {"hostIp", ConfigurationManager.AppSettings("Hostip").ToString()},
+                        {"userId", HttpContext.Current.Session("UID").ToString()},
+                        {"moduleType", HttpContext.Current.Session("ModuleType").ToString()},
+                        {"domainName", Session("CompCode").ToString},
+                        {"showClr", rbtshowclr.SelectedValue.ToString.ToUpper},
+                        {"fk_costcenter_code", USearch.UCddlcostcenter.ToString()},
+                        {"fk_loc_code", USearch.UCddllocation.ToString()},
+                        {"fk_unit", USearch.UCddlunit.ToString()},
+                        {"salaried", USearch.UCddlsalbasis.ToString()},
+                        {"pk_emp_code", USearch.UCTextcode.ToString.ToString},
+                        {"fk_dept_code", USearch.UCddldept.ToString()},
+                        {"fk_desig_code", USearch.UCddldesig.ToString()},
+                        {"fk_grade_code", USearch.UCddlgrade.ToString()},
+                        {"fk_level_code", USearch.UCddllevel.ToString()},
+                        {"month", _objCommon.nNz(ddlMonthYear.SelectedValue.ToString)},
+                        {"year", Right(Trim(ddlMonthYear.SelectedItem.Text.ToString), 4)},
+                        {"firstName", IIf(UCase(USearch.UCrbtfirst.ToString()) = "F", USearch.UCTextname.ToString(), "")},
+                        {"lastName", IIf(UCase(USearch.UCrbtlast.ToString()) = "L", USearch.UCTextname.ToString(), "")},
+                        {"hold", ddlshowsal.SelectedValue.ToString},
+                        {"userGroup", Session("Ugroup").ToString},
+                        {"empStatus", USearch.UCddlEmp.ToString},
+                        {"repId", DDLPaySlipType.SelectedValue.ToString},
+                        {"BatchId", hdnBatchId.Value.ToString},
+                        {"FileFormat", hdnFileFormat.Value.ToString}
+                    }
+                    Dim requestBody As String = JsonConvert.SerializeObject(keyValuePairs)
+                    'Modified by Vishal Chauhan to call HeavyExcel API
+                    CallReportAPIOnNewThreadHeavyExcel(requestBody, "StaticSalRegister", AppPathStr, apiurl)
                 End If
-
-
             ElseIf DDLPaySlipType.SelectedValue.ToString = "41" Or DDLPaySlipType.SelectedValue.ToString = "42" Then
                 arrparam(0) = New SqlParameter("@fk_costcenter_code", USearch.UCddlcostcenter.ToString())
                 arrparam(1) = New SqlParameter("@fk_loc_code", USearch.UCddllocation.ToString())
@@ -1068,142 +827,136 @@ Namespace Payroll
                 'New report for Monthly Excel sheet with dynamic column display,Added by praveen on 19 Feb 2013.
             ElseIf DDLPaySlipType.SelectedValue = "38" Then
                 If ddlrepformat.SelectedValue.Equals("XLS") Then
-
-                    If enable_report_service = 1 Then
-
-                        CallReportService(DDLPaySlipType.SelectedValue)
-                    Else
-                        'Added by Debargha on 21-Oct-2024
-                        Dim sParam(0) As SqlClient.SqlParameter
-                        sParam(0) = New SqlClient.SqlParameter("@SP_Name", "PaySP_SalaryRegInExcel_Dynamic")
-                        '_ObjData.ExecuteStoredProcMsg("PaySP_ReportAPI_ConfigSel", APIConfigParam)
-                        Dim dt As DataTable = _ObjData.GetDataTableProc("PaySP_ReportAPI_ConfigSel", sParam)
-                        If dt.Rows.Count = 0 OrElse dt.Rows(0)("isNewURL").ToString.ToUpper.Trim() <> "Y" Then
-                            arrparam(0) = New SqlParameter("@fk_costcenter_code", USearch.UCddlcostcenter.ToString())
-                            arrparam(1) = New SqlParameter("@fk_loc_code", USearch.UCddllocation.ToString())
-                            arrparam(2) = New SqlParameter("@fk_unit", USearch.UCddlunit.ToString())
-                            arrparam(3) = New SqlParameter("@salaried", USearch.UCddlsalbasis.ToString())
-                            arrparam(4) = New SqlParameter("@pk_emp_code", USearch.UCTextcode.ToString)
-                            arrparam(5) = New SqlParameter("@fk_dept_code", USearch.UCddldept.ToString())
-                            arrparam(6) = New SqlParameter("@fk_desig_code", USearch.UCddldesig.ToString())
-                            arrparam(7) = New SqlParameter("@fk_grade_code", USearch.UCddlgrade.ToString())
-                            arrparam(8) = New SqlParameter("@fk_level_Code", USearch.UCddllevel.ToString())
-                            arrparam(9) = New SqlClient.SqlParameter("@month", _objCommon.nNz(ddlMonthYear.SelectedValue.ToString))
-                            arrparam(10) = New SqlClient.SqlParameter("@year", Right(Trim(ddlMonthYear.SelectedItem.Text.ToString), 4))
-                            arrparam(11) = New SqlParameter("@first_name", IIf(UCase(USearch.UCrbtfirst.ToString()) = "F", USearch.UCTextname.ToString(), ""))
-                            arrparam(12) = New SqlParameter("@last_name", IIf(UCase(USearch.UCrbtlast.ToString()) = "L", USearch.UCTextname.ToString(), ""))
-                            arrparam(13) = New SqlParameter("@Hold", ddlshowsal.SelectedValue.ToString)
-                            arrparam(14) = New SqlParameter("@UserGroup", Session("Ugroup").ToString)
-                            arrparam(15) = New SqlParameter("@EmpStatus", USearch.UCddlEmp.ToString)
-                            arrparam(16) = New SqlParameter("@RepID", DDLPaySlipType.SelectedValue.ToString)
-                            ds = _ObjData.GetDataSetProc("PaySP_SalaryRegInExcel_Dynamic", arrparam)
-                            If ds.Tables(0).Rows.Count > 0 Then
-                                Dim filename As String = "", _sw As StreamWriter, complexID As Guid = Guid.NewGuid()
-                                filename = Server.MapPath(Request.ApplicationPath) & "\" & Session("COMPCODE").ToString & "\Documents\Salary Register" & "_" & Right(complexID.ToString, 6) & ".xls"
-                                MakeZipFolderbyXml(ds, filename, "Salary Register")
-                            Else
-                                _objCommon.ShowMessage("M", lblmsg, "No record(s) Found according to the selection criteria !", False)
-                            End If
+                    'Added by Debargha on 21-Oct-2024
+                    Dim sParam(0) As SqlClient.SqlParameter
+                    sParam(0) = New SqlClient.SqlParameter("@SP_Name", "PaySP_SalaryRegInExcel_Dynamic")
+                    '_ObjData.ExecuteStoredProcMsg("PaySP_ReportAPI_ConfigSel", APIConfigParam)
+                    Dim dt As DataTable = _ObjData.GetDataTableProc("PaySP_ReportAPI_ConfigSel", sParam)
+                    If dt.Rows.Count = 0 OrElse dt.Rows(0)("isNewURL").ToString.ToUpper.Trim() <> "Y" Then
+                        arrparam(0) = New SqlParameter("@fk_costcenter_code", USearch.UCddlcostcenter.ToString())
+                        arrparam(1) = New SqlParameter("@fk_loc_code", USearch.UCddllocation.ToString())
+                        arrparam(2) = New SqlParameter("@fk_unit", USearch.UCddlunit.ToString())
+                        arrparam(3) = New SqlParameter("@salaried", USearch.UCddlsalbasis.ToString())
+                        arrparam(4) = New SqlParameter("@pk_emp_code", USearch.UCTextcode.ToString)
+                        arrparam(5) = New SqlParameter("@fk_dept_code", USearch.UCddldept.ToString())
+                        arrparam(6) = New SqlParameter("@fk_desig_code", USearch.UCddldesig.ToString())
+                        arrparam(7) = New SqlParameter("@fk_grade_code", USearch.UCddlgrade.ToString())
+                        arrparam(8) = New SqlParameter("@fk_level_Code", USearch.UCddllevel.ToString())
+                        arrparam(9) = New SqlClient.SqlParameter("@month", _objCommon.nNz(ddlMonthYear.SelectedValue.ToString))
+                        arrparam(10) = New SqlClient.SqlParameter("@year", Right(Trim(ddlMonthYear.SelectedItem.Text.ToString), 4))
+                        arrparam(11) = New SqlParameter("@first_name", IIf(UCase(USearch.UCrbtfirst.ToString()) = "F", USearch.UCTextname.ToString(), ""))
+                        arrparam(12) = New SqlParameter("@last_name", IIf(UCase(USearch.UCrbtlast.ToString()) = "L", USearch.UCTextname.ToString(), ""))
+                        arrparam(13) = New SqlParameter("@Hold", ddlshowsal.SelectedValue.ToString)
+                        arrparam(14) = New SqlParameter("@UserGroup", Session("Ugroup").ToString)
+                        arrparam(15) = New SqlParameter("@EmpStatus", USearch.UCddlEmp.ToString)
+                        arrparam(16) = New SqlParameter("@RepID", DDLPaySlipType.SelectedValue.ToString)
+                        ds = _ObjData.GetDataSetProc("PaySP_SalaryRegInExcel_Dynamic", arrparam)
+                        If ds.Tables(0).Rows.Count > 0 Then
+                            Dim filename As String = "", _sw As StreamWriter, complexID As Guid = Guid.NewGuid()
+                            filename = Server.MapPath(Request.ApplicationPath) & "\" & Session("COMPCODE").ToString & "\Documents\Salary Register" & "_" & Right(complexID.ToString, 6) & ".xls"
+                            MakeZipFolderbyXml(ds, filename, "Salary Register")
+                        Else
+                            _objCommon.ShowMessage("M", lblmsg, "No record(s) Found according to the selection criteria !", False)
                         End If
-                        If dt.Rows.Count > 0 AndAlso dt.Rows(0)("isNewURL").ToString.ToUpper.Trim() = "Y" Then
-                            If dt.Rows(0)("WithoutProcessbar").ToString.ToUpper.Trim() = "Y" Then
-                                'Report API code(Debaragha) without Processbar
-                                Dim keyValuePairs As New Dictionary(Of String, Object) From {
-                                {"hostIp", ConfigurationManager.AppSettings("Hostip").ToString()},
-                                {"userId", HttpContext.Current.Session("UID").ToString()},
-                                {"moduleType", HttpContext.Current.Session("ModuleType").ToString()},
-                                {"domainName", Session("CompCode").ToString},
-                                {"showClr", rbtshowclr.SelectedValue.ToString.ToUpper},
-                                {"fk_costcenter_code", USearch.UCddlcostcenter.ToString()},
-                                {"fk_loc_code", USearch.UCddllocation.ToString()},
-                                {"fk_unit", USearch.UCddlunit.ToString()},
-                                {"salaried", USearch.UCddlsalbasis.ToString()},
-                                {"pk_emp_code", USearch.UCTextcode.ToString.ToString},
-                                {"fk_dept_code", USearch.UCddldept.ToString()},
-                                {"fk_desig_code", USearch.UCddldesig.ToString()},
-                                {"fk_grade_code", USearch.UCddlgrade.ToString()},
-                                {"fk_level_code", USearch.UCddllevel.ToString()},
-                                {"month", _objCommon.nNz(ddlMonthYear.SelectedValue.ToString)},
-                                {"year", Right(Trim(ddlMonthYear.SelectedItem.Text.ToString), 4)},
-                                {"firstName", IIf(UCase(USearch.UCrbtfirst.ToString()) = "F", USearch.UCTextname.ToString(), "")},
-                                {"lastName", IIf(UCase(USearch.UCrbtlast.ToString()) = "L", USearch.UCTextname.ToString(), "")},
-                                {"hold", ddlshowsal.SelectedValue.ToString},
-                                {"userGroup", Session("Ugroup").ToString},
-                                {"empStatus", USearch.UCddlEmp.ToString},
-                                {"repId", DDLPaySlipType.SelectedValue.ToString},
-                                {"FileName", txtrptName.Text.ToString}
-                            }
-                                Dim requestBody As String = JsonConvert.SerializeObject(keyValuePairs)
-                                CallAPIReport(requestBody, "SalaryRegister")
-                            Else
-                                'New Report API(Vishal) code to show Processbar
-                                Dim arprm(8) As SqlClient.SqlParameter, apiurl As String
-                                arprm(0) = New SqlClient.SqlParameter("@UserID", Session("UID").ToString)
-                                arprm(1) = New SqlClient.SqlParameter("@Process_Type", GetApiProcessType(DDLPaySlipType.SelectedValue))
-                                arprm(2) = New SqlClient.SqlParameter("@ActionType", "Init")
-                                arprm(3) = New SqlClient.SqlParameter("@Sys_IP", "::1")
-                                arprm(4) = New SqlClient.SqlParameter("@HostIP", ConfigurationManager.AppSettings("Hostip").ToString())
-                                arprm(5) = New SqlClient.SqlParameter("@ProcName", "PaySP_SalaryRegInExcel_Dynamic")
-                                arprm(6) = New SqlClient.SqlParameter("@DdlRptName", DDLPaySlipType.SelectedItem.Text.Replace("'", ""))
-                                arprm(7) = New SqlClient.SqlParameter("@DdlRptId", DDLPaySlipType.SelectedValue)
-                                arprm(8) = New SqlClient.SqlParameter("@RPTFRMT", "XLS")
-                                Dim _dt As DataTable = _ObjData.GetDataTableProc("PaySP_ReportApi_ProcessBar", arprm)
-                                If (_dt.Rows.Count > 0) Then
-                                    If (_dt.Rows(0)("IsAbleToStart").ToString = "1" AndAlso _dt.Rows(0)("BatchId").ToString <> "") Then
-                                        Dim scripttag As String = "StartProcessbar('" & DDLPaySlipType.SelectedItem.Text.Replace("'", "") & "');"
-                                        'ScriptManager.RegisterStartupScript(Page, Page.GetType(), "openpooce89sbar231", scripttag, True)
-                                        ScriptManager.RegisterStartupScript(Me, Me.GetType(), "openpooce89sbar231", scripttag, True)
-                                        hdnBatchId.Value = _dt.Rows(0)("BatchId").ToString
-                                        btnProgressbarExcel.Visible = False
-                                        lblProcessStatusExcel.Text = ""
-                                        divSocialExcel.Visible = False
-                                        apiurl = _dt.Rows(0)("apiurl").ToString
+                    End If
+                    If dt.Rows.Count > 0 AndAlso dt.Rows(0)("isNewURL").ToString.ToUpper.Trim() = "Y" Then
+                        If dt.Rows(0)("WithoutProcessbar").ToString.ToUpper.Trim() = "Y" Then
+                            'Report API code(Debaragha) without Processbar
+                            Dim keyValuePairs As New Dictionary(Of String, Object) From {
+                            {"hostIp", ConfigurationManager.AppSettings("Hostip").ToString()},
+                            {"userId", HttpContext.Current.Session("UID").ToString()},
+                            {"moduleType", HttpContext.Current.Session("ModuleType").ToString()},
+                            {"domainName", Session("CompCode").ToString},
+                            {"showClr", rbtshowclr.SelectedValue.ToString.ToUpper},
+                            {"fk_costcenter_code", USearch.UCddlcostcenter.ToString()},
+                            {"fk_loc_code", USearch.UCddllocation.ToString()},
+                            {"fk_unit", USearch.UCddlunit.ToString()},
+                            {"salaried", USearch.UCddlsalbasis.ToString()},
+                            {"pk_emp_code", USearch.UCTextcode.ToString.ToString},
+                            {"fk_dept_code", USearch.UCddldept.ToString()},
+                            {"fk_desig_code", USearch.UCddldesig.ToString()},
+                            {"fk_grade_code", USearch.UCddlgrade.ToString()},
+                            {"fk_level_code", USearch.UCddllevel.ToString()},
+                            {"month", _objCommon.nNz(ddlMonthYear.SelectedValue.ToString)},
+                            {"year", Right(Trim(ddlMonthYear.SelectedItem.Text.ToString), 4)},
+                            {"firstName", IIf(UCase(USearch.UCrbtfirst.ToString()) = "F", USearch.UCTextname.ToString(), "")},
+                            {"lastName", IIf(UCase(USearch.UCrbtlast.ToString()) = "L", USearch.UCTextname.ToString(), "")},
+                            {"hold", ddlshowsal.SelectedValue.ToString},
+                            {"userGroup", Session("Ugroup").ToString},
+                            {"empStatus", USearch.UCddlEmp.ToString},
+                            {"repId", DDLPaySlipType.SelectedValue.ToString},
+                            {"FileName", txtrptName.Text.ToString}
+                        }
+                            Dim requestBody As String = JsonConvert.SerializeObject(keyValuePairs)
+                            CallAPIReport(requestBody, "SalaryRegister")
+                        Else
+                            'New Report API(Vishal) code to show Processbar
+                            Dim arprm(8) As SqlClient.SqlParameter, apiurl As String
+                            arprm(0) = New SqlClient.SqlParameter("@UserID", Session("UID").ToString)
+                            arprm(1) = New SqlClient.SqlParameter("@Process_Type", GetApiProcessType(DDLPaySlipType.SelectedValue))
+                            arprm(2) = New SqlClient.SqlParameter("@ActionType", "Init")
+                            arprm(3) = New SqlClient.SqlParameter("@Sys_IP", "::1")
+                            arprm(4) = New SqlClient.SqlParameter("@HostIP", ConfigurationManager.AppSettings("Hostip").ToString())
+                            arprm(5) = New SqlClient.SqlParameter("@ProcName", "PaySP_SalaryRegInExcel_Dynamic")
+                            arprm(6) = New SqlClient.SqlParameter("@DdlRptName", DDLPaySlipType.SelectedItem.Text.Replace("'", ""))
+                            arprm(7) = New SqlClient.SqlParameter("@DdlRptId", DDLPaySlipType.SelectedValue)
+                            arprm(8) = New SqlClient.SqlParameter("@RPTFRMT", "XLS")
+                            Dim _dt As DataTable = _ObjData.GetDataTableProc("PaySP_ReportApi_ProcessBar", arprm)
+                            If (_dt.Rows.Count > 0) Then
+                                If (_dt.Rows(0)("IsAbleToStart").ToString = "1" AndAlso _dt.Rows(0)("BatchId").ToString <> "") Then
+                                    Dim scripttag As String = "StartProcessbar('" & DDLPaySlipType.SelectedItem.Text.Replace("'", "") & "');"
+                                    'ScriptManager.RegisterStartupScript(Page, Page.GetType(), "openpooce89sbar231", scripttag, True)
+                                    ScriptManager.RegisterStartupScript(Me, Me.GetType(), "openpooce89sbar231", scripttag, True)
+                                    hdnBatchId.Value = _dt.Rows(0)("BatchId").ToString
+                                    btnProgressbarExcel.Visible = False
+                                    lblProcessStatusExcel.Text = ""
+                                    divSocialExcel.Visible = False
+                                    apiurl = _dt.Rows(0)("apiurl").ToString
+                                Else
+                                    divSocialExcel.Visible = True
+                                    lblProcessStatusExcel.Text = DDLPaySlipType.SelectedItem.Text.Replace("'", "") & " is already processing. Please wait till the completion."
+                                    If (_dt.Rows(0)("UserId").ToString.ToUpper <> Session("UID").ToUpper.ToString) Then
+                                        btnProgressbarExcel.Visible = True
                                     Else
-                                        divSocialExcel.Visible = True
-                                        lblProcessStatusExcel.Text = DDLPaySlipType.SelectedItem.Text.Replace("'", "") & " is already processing. Please wait till the completion."
-                                        If (_dt.Rows(0)("UserId").ToString.ToUpper <> Session("UID").ToUpper.ToString) Then
-                                            btnProgressbarExcel.Visible = True
-                                        Else
-                                            btnProgressbarExcel.Visible = True
-                                        End If
-                                        _msg.Add(New PayrollUtility.UserMessage With {.MessageType = "E", .MessageString = lblProcessStatusExcel.Text})
-                                        _objCommon.ShowMessage(_msg)
-                                        ScriptManager.RegisterStartupScript(Me.Page, GetType(Page), "refreshExeclProcessStatus996", "ShowExcelLockSummaryDetails('" & _dt.Rows(0)("Process_Type").ToString.ToUpper & "')", True)
-                                        Exit Sub
+                                        btnProgressbarExcel.Visible = True
                                     End If
+                                    _msg.Add(New PayrollUtility.UserMessage With {.MessageType = "E", .MessageString = lblProcessStatusExcel.Text})
+                                    _objCommon.ShowMessage(_msg)
+                                    ScriptManager.RegisterStartupScript(Me.Page, GetType(Page), "refreshExeclProcessStatus996", "ShowExcelLockSummaryDetails('" & _dt.Rows(0)("Process_Type").ToString.ToUpper & "')", True)
+                                    Exit Sub
                                 End If
-                                Dim keyValuePairs As New Dictionary(Of String, Object) From {
-                                {"hostIp", ConfigurationManager.AppSettings("Hostip").ToString()},
-                                {"userId", HttpContext.Current.Session("UID").ToString()},
-                                {"moduleType", HttpContext.Current.Session("ModuleType").ToString()},
-                                {"domainName", Session("CompCode").ToString},
-                                {"showClr", rbtshowclr.SelectedValue.ToString.ToUpper},
-                                {"fk_costcenter_code", USearch.UCddlcostcenter.ToString()},
-                                {"fk_loc_code", USearch.UCddllocation.ToString()},
-                                {"fk_unit", USearch.UCddlunit.ToString()},
-                                {"salaried", USearch.UCddlsalbasis.ToString()},
-                                {"pk_emp_code", USearch.UCTextcode.ToString.ToString},
-                                {"fk_dept_code", USearch.UCddldept.ToString()},
-                                {"fk_desig_code", USearch.UCddldesig.ToString()},
-                                {"fk_grade_code", USearch.UCddlgrade.ToString()},
-                                {"fk_level_code", USearch.UCddllevel.ToString()},
-                                {"month", _objCommon.nNz(ddlMonthYear.SelectedValue.ToString)},
-                                {"year", Right(Trim(ddlMonthYear.SelectedItem.Text.ToString), 4)},
-                                {"firstName", IIf(UCase(USearch.UCrbtfirst.ToString()) = "F", USearch.UCTextname.ToString(), "")},
-                                {"lastName", IIf(UCase(USearch.UCrbtlast.ToString()) = "L", USearch.UCTextname.ToString(), "")},
-                                {"hold", ddlshowsal.SelectedValue.ToString},
-                                {"userGroup", Session("Ugroup").ToString},
-                                {"empStatus", USearch.UCddlEmp.ToString},
-                                {"repId", DDLPaySlipType.SelectedValue.ToString},
-                                {"BatchId", hdnBatchId.Value.ToString},
-                                {"FileFormat", hdnFileFormat.Value.ToString},
-                                {"FileName", txtrptName.Text.ToString}
-                            }
-                                Dim requestBody As String = JsonConvert.SerializeObject(keyValuePairs)
-                                CallReportAPIOnNewThread(requestBody, "SalaryRegister", AppPathStr, apiurl)
                             End If
-
+                            Dim keyValuePairs As New Dictionary(Of String, Object) From {
+                            {"hostIp", ConfigurationManager.AppSettings("Hostip").ToString()},
+                            {"userId", HttpContext.Current.Session("UID").ToString()},
+                            {"moduleType", HttpContext.Current.Session("ModuleType").ToString()},
+                            {"domainName", Session("CompCode").ToString},
+                            {"showClr", rbtshowclr.SelectedValue.ToString.ToUpper},
+                            {"fk_costcenter_code", USearch.UCddlcostcenter.ToString()},
+                            {"fk_loc_code", USearch.UCddllocation.ToString()},
+                            {"fk_unit", USearch.UCddlunit.ToString()},
+                            {"salaried", USearch.UCddlsalbasis.ToString()},
+                            {"pk_emp_code", USearch.UCTextcode.ToString.ToString},
+                            {"fk_dept_code", USearch.UCddldept.ToString()},
+                            {"fk_desig_code", USearch.UCddldesig.ToString()},
+                            {"fk_grade_code", USearch.UCddlgrade.ToString()},
+                            {"fk_level_code", USearch.UCddllevel.ToString()},
+                            {"month", _objCommon.nNz(ddlMonthYear.SelectedValue.ToString)},
+                            {"year", Right(Trim(ddlMonthYear.SelectedItem.Text.ToString), 4)},
+                            {"firstName", IIf(UCase(USearch.UCrbtfirst.ToString()) = "F", USearch.UCTextname.ToString(), "")},
+                            {"lastName", IIf(UCase(USearch.UCrbtlast.ToString()) = "L", USearch.UCTextname.ToString(), "")},
+                            {"hold", ddlshowsal.SelectedValue.ToString},
+                            {"userGroup", Session("Ugroup").ToString},
+                            {"empStatus", USearch.UCddlEmp.ToString},
+                            {"repId", DDLPaySlipType.SelectedValue.ToString},
+                            {"BatchId", hdnBatchId.Value.ToString},
+                            {"FileFormat", hdnFileFormat.Value.ToString},
+                            {"FileName", txtrptName.Text.ToString}
+                        }
+                            Dim requestBody As String = JsonConvert.SerializeObject(keyValuePairs)
+                            CallReportAPIOnNewThread(requestBody, "SalaryRegister", AppPathStr, apiurl)
                         End If
+
                     End If
                 Else
                     If ddllEncrType.SelectedValue.ToUpper() = "WP" Then
@@ -4319,6 +4072,7 @@ Namespace Payroll
                 txtrptName.Text = ""
                 chkSFTP.Checked = False
                 ddllEncrType.SelectedIndex = -1
+                ddlrepformat.SelectedIndex = -1
                 btnExport2CSV.Visible = False
                 If Convert.ToString(DDLPaySlipType.SelectedValue).Trim.Equals("67") Then
                     trling.Style("display") = ""
@@ -7871,8 +7625,6 @@ Namespace Payroll
             lblProcessBarMsg.Text = ""
             LnkPDF.Style.Value = "display:none"
             HidEmailCCBCC.Value = ""
-            lblMailMsgWOPWD.Text = ""
-            LnkPDFWOPWD.Style.Value = "display:none"
             'Excel Process locking validation checking
             'CheckExcelProcessbarAlreadyProcessing()
             'If (lblProcessStatusExcel.Text <> "") Then
@@ -8441,10 +8193,6 @@ Namespace Payroll
                         ScriptManager.RegisterStartupScript(Page, Page.GetType(), "openprocessF821", "UnLoadPaySlipProgress();", True)
                         _msg.Add(New PayrollUtility.UserMessage With {.MessageType = "E", .MessageString = MsgReturn.ToString})
                         _objCommon.ShowMessage(_msg)
-                        'Hide only for With leave details
-                        If DdlreportType.SelectedValue.ToString.ToUpper = "SL" Then
-                            ScriptManager.RegisterStartupScript(Page, Page.GetType(), "hidePdfIcons", "hidePdfIcons();", True)
-                        End If
                         Exit Sub
                     End If
                 End If
@@ -8632,38 +8380,10 @@ Namespace Payroll
                         HidPreVal.Value = var.ToString
                         ScriptManager.RegisterStartupScript(Page, Page.GetType(), "openpopup", "ShowTaxDetails();", True)
                     Else
-                        Dim _mm As String = "", _yyyy As String = ""
-                        If ddlMonthYear.SelectedItem IsNot Nothing Then
-                            _mm = CType(ddlMonthYear.SelectedValue.ToString, Integer)
-                            _yyyy = Right(ddlMonthYear.SelectedItem.Text.ToString, 4)
-                        End If
-                        Dim gcs_service As Integer = 0
-                        If gcs_service_obj.IsPaySlipAllowedByMonthYear(Session("compCode"), "TAXSLIP", _mm, _yyyy) Then
-                            gcs_service = 1
-                        End If
-                        If gcs_service = 1 Then
-                            Dim dtp As DataTable = InitializeProcessBar(_ds.GetXml(), "I", "TAXSLIP_EMAIL", DdlreportType.SelectedValue.Replace("'", "").ToUpper, DdlreportType.SelectedItem.Text.Replace("'", ""), _ds.Tables(0).Rows.Count)
-                            If (dtp.Rows.Count > 0 AndAlso dtp.Rows(0)("IsAbleToStart").ToString = "0") Then
-                                lblMailMsg.Text = dtp.Rows(0)("Msg").ToString
-                                ScriptManager.RegisterStartupScript(Page, Page.GetType(), "openprocessF824", "UnLoadPaySlipProgress();", True)
-                                _msg.Add(New PayrollUtility.UserMessage With {.MessageType = "E", .MessageString = dtp.Rows(0)("Msg").ToString})
-                                _objCommon.ShowMessage(_msg)
-                                LnkPDF.Style.Value = "display:None"
-                                IsProcessBarStated = False
-                                Exit Sub
-                            End If
-                            HidPreVal.Value = var.ToString
-
-                            ScriptManager.RegisterStartupScript(Page, Page.GetType(), "openpopup", "ShowTaxDetailsMail();", True)
-
-                        Else
-                            ScriptManager.RegisterStartupScript(Page, Page.GetType(), "closepopup", "CloseSlipProgressbar();", True)
-                            PopupScript = ""
-                            PopupScript = PopupScript & "window.open('Reports/PreSalSlip.aspx?id=" & var & "', '','directories=no,width=600,height=250,top=259,bottom=259, left=212,screenX=212,screenY=212,toolbar=no,scrollbars=no,location=no,resizable =no');"
-                            ScriptManager.RegisterClientScriptBlock(Page, Page.GetType(), "openpopup", PopupScript, True)
-                            PopupScript = ""
-
-                        End If
+                        PopupScript = ""
+                        PopupScript = PopupScript & "window.open('Reports/PreSalSlip.aspx?id=" & var & "', '','directories=no,width=600,height=250,top=259,bottom=259, left=212,screenX=212,screenY=212,toolbar=no,scrollbars=no,location=no,resizable =no');"
+                        ScriptManager.RegisterClientScriptBlock(Page, Page.GetType(), "openpopup", PopupScript, True)
+                        PopupScript = ""
                     End If
 
                 ElseIf DdlreportType.SelectedValue = "TL" Then
@@ -8708,36 +8428,19 @@ Namespace Payroll
                         _yyyy = Right(ddlMonthYear.SelectedItem.Text.ToString, 4)
                     End If
                     Dim gcs_service As Integer = 0
-                    'If DdlreportType.SelectedValue.ToString.ToUpper = "SL" And HidEmailCCBCC.Value <> "SP" And _A <> "" And gcs_service_obj.IsPaySlipAllowedByMonthYear(Session("compCode"), "SLIPWILVE", _mm, _yyyy) Then
-                    If DdlreportType.SelectedValue.ToString.ToUpper = "SL" And gcs_service_obj.IsPaySlipAllowedByMonthYear(Session("compCode"), "SLIPWILVE", _mm, _yyyy) Then
+                    If DdlreportType.SelectedValue.ToString.ToUpper = "SL" And HidEmailCCBCC.Value <> "SP" And _A <> "" And gcs_service_obj.IsPaySlipAllowedByMonthYear(Session("compCode"), "SLIPWILVE", _mm, _yyyy) Then
                         gcs_service = 1
                     End If
                     If gcs_service = 1 Then
-                        Dim process_type As String = "SLIPWILVE"
-                        If HidEmailCCBCC.Value = "SP" Or _A = "" Then
-                            process_type = process_type & "_EMAIL"
+                        Dim _dt_temp, temp As New DataTable
+                        _dt_temp = _ObjData.ExecSQLQuery("Insert Into GcsSalaryProcessStatus(process_user_id, status, total_processed, total_to_process, record_created, Process_Type, mm, YYYY) VALUES('" & Convert.ToString(HttpContext.Current.Session("UId")) & "','START','0', '" & Convert.ToString(row_count) & "',GetDate(), 'SLIPWILVE', '" & monthvalue & "', '" & YearVal & "'); SELECT SCOPE_IDENTITY() AS id;")
+                        If _dt_temp.Rows.Count > 0 Then
+                            Session("process_status_id") = _dt_temp.Rows(0)("id")
+                            process_status_id.Value = _dt_temp.Rows(0)("id").ToString
+                            LnkPDF.Style.Value = "display:none"
+                            download_pdf1.Style.Value = "border:0;cursor:pointer;"
                         End If
-                        Dim dtp As DataTable = InitializeProcessBar(_ds.GetXml(), "I", process_type, DdlreportType.SelectedValue.Replace("'", "").ToUpper, DdlreportType.SelectedItem.Text.Replace("'", ""), _ds.Tables(0).Rows.Count)
-                        If (dtp.Rows.Count > 0 AndAlso dtp.Rows(0)("IsAbleToStart").ToString = "0") Then
-                            lblMailMsg.Text = dtp.Rows(0)("Msg").ToString
-                            ScriptManager.RegisterStartupScript(Page, Page.GetType(), "openprocessF824", "UnLoadPaySlipProgress();", True)
-                            _msg.Add(New PayrollUtility.UserMessage With {.MessageType = "E", .MessageString = dtp.Rows(0)("Msg").ToString})
-                            _objCommon.ShowMessage(_msg)
-                            LnkPDF.Style.Value = "display:None"
-                            IsProcessBarStated = False
-                            Exit Sub
-                        End If
-                        HidPreVal.Value = var.ToString
-                        'Dim _dt_temp, temp As New DataTable
-                        '_dt_temp = _ObjData.ExecSQLQuery("Insert Into GcsSalaryProcessStatus(process_user_id, status, total_processed, total_to_process, record_created, Process_Type, mm, YYYY) VALUES('" & Convert.ToString(HttpContext.Current.Session("UId")) & "','START','0', '" & Convert.ToString(row_count) & "',GetDate(), 'SLIPWILVE', '" & monthvalue & "', '" & YearVal & "'); SELECT SCOPE_IDENTITY() AS id;")
-                        'If _dt_temp.Rows.Count > 0 Then
-                        '    Session("process_status_id") = _dt_temp.Rows(0)("id")
-                        '    process_status_id.Value = _dt_temp.Rows(0)("id").ToString
-                        '    LnkPDF.Style.Value = "display:none"
-                        '    download_pdf1.Style.Value = "border:0;cursor:pointer;"
-                        'End If
                     Else
-                        process_status_id.Value = ""
                         download_pdf1.Style.Value = "display:none"
 
                     End If
@@ -8752,7 +8455,7 @@ Namespace Payroll
                         var = _strVal.ToString
                     End If
                     HidPreVal.Value = var.ToString
-                    If gcs_service = 1 Then
+                    If gcs_service = 1 And HidEmailCCBCC.Value <> "SP" Then
                         ScriptManager.RegisterStartupScript(Page, Page.GetType(), "openpopupwithleave", "ShowWithLeaveDetails();", True)
                     Else
                         ScriptManager.RegisterStartupScript(Page, Page.GetType(), "closepopup", "CloseSlipProgressbar();", True)
@@ -8859,44 +8562,9 @@ Namespace Payroll
                         HidPreVal.Value = var.ToString
                         ScriptManager.RegisterStartupScript(Page, Page.GetType(), "openpopup", "ShowSlipWOLeave();", True)
                     Else
-                        Dim _mm As String = "", _yyyy As String = ""
-                        If ddlMonthYear.SelectedItem IsNot Nothing Then
-                            _mm = CType(ddlMonthYear.SelectedValue.ToString, Integer)
-                            _yyyy = Right(ddlMonthYear.SelectedItem.Text.ToString, 4)
-                        End If
-                        Dim gcs_service As Integer = 0
-                        If gcs_service_obj.IsPaySlipAllowedByMonthYear(Session("compCode"), "SLIPWOLVE", _mm, _yyyy) Then
-                            gcs_service = 1
-                        End If
-                        If gcs_service = 1 Then
-                            Dim process_type As String = "SLIPWOLVE"
-                            If HidEmailCCBCC.Value = "SP" Or _A = "" Then
-                                process_type = process_type & "_EMAIL"
-                            End If
-                            Dim _dt_temp, temp As New DataTable
-                            Dim dtp As DataTable = InitializeProcessBar(_ds.GetXml(), "I", process_type, DdlreportType.SelectedValue.Replace("'", "").ToUpper, DdlreportType.SelectedItem.Text.Replace("'", ""), _ds.Tables(0).Rows.Count)
-                            If (dtp.Rows.Count > 0 AndAlso dtp.Rows(0)("IsAbleToStart").ToString = "0") Then
-                                lblMailMsg.Text = dtp.Rows(0)("Msg").ToString
-                                ScriptManager.RegisterStartupScript(Page, Page.GetType(), "openprocessF824", "UnLoadPaySlipProgress();", True)
-                                _msg.Add(New PayrollUtility.UserMessage With {.MessageType = "E", .MessageString = dtp.Rows(0)("Msg").ToString})
-                                _objCommon.ShowMessage(_msg)
-                                LnkPDF.Style.Value = "display:None"
-                                IsProcessBarStated = False
-                                Exit Sub
-                            End If
-
-                            HidPreVal.Value = var.ToString
-                            ScriptManager.RegisterStartupScript(Page, Page.GetType(), "openpopupwithleave", "ShowWithoutLeaveDetails();", True)
-                        Else
-                            download_pdf1.Style.Value = "display:none"
-
-                        End If
-                        If gcs_service = 0 Then
-                            ScriptManager.RegisterStartupScript(Page, Page.GetType(), "closepopup", "CloseSlipProgressbar();", True)
-                            PopupScript = ""
-                            PopupScript = PopupScript & "window.open('Reports/Pre_SalarySlipInclude.aspx?id=" & var & "', '','directories=no,width=600,height=250,top=259,bottom=259, left=212,screenX=212,screenY=212,toolbar=no,scrollbars=no,location=no,resizable =no');"
-                            ScriptManager.RegisterClientScriptBlock(Page, Page.GetType(), "openpopup", PopupScript, True)
-                        End If
+                        PopupScript = ""
+                        PopupScript = PopupScript & "window.open('Reports/Pre_SalarySlipInclude.aspx?id=" & var & "', '','directories=no,width=600,height=250,top=259,bottom=259, left=212,screenX=212,screenY=212,toolbar=no,scrollbars=no,location=no,resizable =no');"
+                        ScriptManager.RegisterClientScriptBlock(Page, Page.GetType(), "openpopup", PopupScript, True)
                     End If
 
                     PopupScript = ""
@@ -9170,8 +8838,6 @@ Namespace Payroll
                     End Try
                     If gcs_service = 1 Then
                         Dim dtp As DataTable = InitializeProcessBar(_ds.GetXml(), "I", "FORCAST", DdlreportType.SelectedValue.Replace("'", "").ToUpper, DdlreportType.SelectedItem.Text.Replace("'", ""), _ds.Tables(0).Rows.Count)
-                    Else
-                        process_status_id.Value = ""
                     End If
 
                     If UsedFor.ToString.ToUpper.Equals("SPDF") Then
@@ -9504,7 +9170,7 @@ Namespace Payroll
         Private Function InitializeProcessBar(EmpXml As String, flag As String, Process_Type As String, PaySlipId As String, PaySlipName As String, Optional count As Integer = 0) As DataTable
             Dim gcs_service As Integer = 0
             Dim month As String = ddlMonthYear.SelectedValue.ToString, year As String = Right(ddlMonthYear.SelectedItem.Text.ToString, 4)
-            Dim process_resolved = Process_Type.Split("_"c)
+
             Try
                 Dim gcs As New DataTable
                 Dim _mm As String = "", _yyyy As String = "", _Month As String = ""
@@ -9515,8 +9181,7 @@ Namespace Payroll
                     _yyyy = Right(ddlMonthYear.SelectedItem.Text.ToString, 4)
                 End If
 
-
-                If gcs_service_obj.IsPaySlipAllowedByMonthYear(Session("compCode"), process_resolved(0), _mm, _yyyy) Then
+                If gcs_service_obj.IsPaySlipAllowedByMonthYear(Session("compCode"), Process_Type, _mm, _yyyy) Then
                     gcs_service = 1
                 End If
 
@@ -9526,7 +9191,6 @@ Namespace Payroll
             'Array.IndexOf(allowed_gcs_service, Process_Type) >= 0
             If gcs_service = 0 Then
                 process_status_id.Value = ""
-                is_email_process.Value = "0"
                 Dim ArrParam(5) As SqlClient.SqlParameter
                 Try
                     ArrParam(0) = New SqlClient.SqlParameter("@flag", flag)
@@ -9550,22 +9214,14 @@ Namespace Payroll
                     dst = _ObjData.GetDataTableProc("PaySP_GetGcsSalarySlip", _ArrParam)
                     If (dst.Rows.Count > 0 AndAlso dst.Rows(0)("IsAbleToStart").ToString = "0") Then
                         Dim slip As String = "Pay Slip is already publishing. Please wait till the completion."
-                        Dim process() As String = dst.Rows(0)("Process_Type").ToString.Split("_"c)
-                        If process.Count > 1 Then
-                            is_email_process.Value = "1"
-                        Else
-                            is_email_process.Value = "0"
-                        End If
-                        If process(0).ToString = "TAXSLIP" Then
-                            dst.Rows(0)("Msg") = If(process.Count > 1, "Salary Slip With Tax Details (Email) is already publishing. Please wait till the completion.", "Salary Slip With Tax Details is already publishing. Please wait till the completion.")
-                        ElseIf process(0).ToString = "SLIPWOLVE" Then
-                            dst.Rows(0)("Msg") = If(process.Count > 1, "Pay Slip Without Leave Details (Email) is already publishing. Please wait till the completion.", "Pay Slip Without Leave Details is already publishing. Please wait till the completion.")
-                        ElseIf process(0).ToString = "FORCAST" Then
-                            dst.Rows(0)("Msg") = If(process.Count > 1, "Tax sheet-forecast (Email) is already publishing. Please wait till the completion.", "Tax sheet-forecast is already publishing. Please wait till the completion.")
-                        ElseIf process(0).ToString = "SLIPTDSV" Then
-                            dst.Rows(0)("Msg") = If(process.Count > 1, "TDS Estimation (Email) is already publishing. Please wait till the completion.", "TDS Estimation is already publishing. Please wait till the completion.")
-                        ElseIf process(0).ToString = "SLIPWILVE" Then
-                            dst.Rows(0)("Msg") = If(process.Count > 1, "Pay Slip With Leave Details (Email) is already publishing. Please wait till the completion.", "Pay Slip With Leave Details is already publishing. Please wait till the completion.")
+                        If dst.Rows(0)("Process_Type").ToString = "TAXSLIP" Then
+                            dst.Rows(0)("Msg") = "Salary Slip With Tax Details is already publishing. Please wait till the completion."
+                        ElseIf dst.Rows(0)("Process_Type").ToString = "SLIPWOLVE" Then
+                            dst.Rows(0)("Msg") = "Pay Slip Without Leave Details is already publishing. Please wait till the completion."
+                        ElseIf dst.Rows(0)("Process_Type").ToString = "FORCAST" Then
+                            dst.Rows(0)("Msg") = "Tax sheet-forecast is already publishing. Please wait till the completion."
+                        ElseIf dst.Rows(0)("Process_Type").ToString = "SLIPTDSV" Then
+                            dst.Rows(0)("Msg") = "TDS Estimation is already publishing. Please wait till the completion."
                         Else
                             dst.Rows(0)("Msg") = slip
                         End If
@@ -9574,18 +9230,14 @@ Namespace Payroll
                         Return dst
                     End If
 
-
                     Dim _dt_temp, temp As New DataTable
 
-                    _dt_temp = _ObjData.ExecSQLQuery("Insert Into GcsSalaryProcessStatus(process_user_id, status, total_processed, total_to_process, record_created, Process_Type, mm, YYYY) VALUES('" & Convert.ToString(HttpContext.Current.Session("UId")) & "','START','0', '" & Convert.ToString(count) & "',GetDate(),'" & Process_Type & "', '" & month & "', '" & year & "'); SELECT SCOPE_IDENTITY() AS id;")
+                    _dt_temp = _ObjData.ExecSQLQuery("DELETE FROM GcsSalaryProcessStatus WHERE process_user_id = '" & Convert.ToString(HttpContext.Current.Session("UId")) & "' and Process_Type='" & Process_Type & "' " & " and status = 'DONE' and process_user_id = '" & Convert.ToString(HttpContext.Current.Session("UId")) & "' " &
+                                                   "Insert Into GcsSalaryProcessStatus(process_user_id, status, total_processed, total_to_process, record_created, Process_Type, mm, YYYY) VALUES('" & Convert.ToString(HttpContext.Current.Session("UId")) & "','START','0', '" & Convert.ToString(count) & "',GetDate(),'" & Process_Type & "', '" & month & "', '" & year & "'); SELECT SCOPE_IDENTITY() AS id;")
+
                     If _dt_temp.Rows.Count > 0 Then
                         Session("process_status_id") = _dt_temp.Rows(0)("id")
                         process_status_id.Value = _dt_temp.Rows(0)("id")
-                    End If
-                    If process_resolved.Count > 1 Then
-                        is_email_process.Value = "1"
-                    Else
-                        is_email_process.Value = "0"
                     End If
                     _dt_temp.Dispose()
                     Return temp
@@ -10746,8 +10398,6 @@ Namespace Payroll
             lblProcessBarMsg.Text = ""
             LnkPDF.Style.Value = "display:none"
             HidEmailCCBCC.Value = "SP"
-            lblMailMsgWOPWD.Text = ""
-            LnkPDFWOPWD.Style.Value = "display:none"
             'Excel Process locking validation checking
             'CheckExcelProcessbarAlreadyProcessing()
             'If (lblProcessStatusExcel.Text <> "") Then
@@ -12347,8 +11997,6 @@ Namespace Payroll
 
         Protected Sub btnWOPWD_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles btnWOPWD.Click
             lblProcessBarMsg.Text = ""
-            is_email_process.Value = "0"
-
             Try
                 Dim _TotRec As String, _RecCount As Integer = 0, _Counter As Integer, To_mail As String, arrparam(4) As SqlClient.SqlParameter, _ds As New DataSet _
              , _dt As New DataTable, _dRow As DataRow, _StrEmpCode As String = "", MailNotSentCount As String = "", _strVal As String = Guid.NewGuid.ToString _
@@ -12399,7 +12047,8 @@ Namespace Payroll
                         Dim _dt_temp, temp As New DataTable
                         Dim month As String = ddlMonthYear.SelectedValue.ToString, year As String = Right(ddlMonthYear.SelectedItem.Text.ToString, 4)
 
-                        _dt_temp = _ObjData.ExecSQLQuery("Insert Into GcsSalaryProcessStatus(process_user_id, status, total_processed, total_to_process, record_created, Process_Type, mm, YYYY) VALUES('" & Convert.ToString(HttpContext.Current.Session("UId")) & "','START','0', '" & Convert.ToString(cnt) & "',GetDate(),'" & Process_Type & "', '" & month & "', '" & year & "'); SELECT SCOPE_IDENTITY() AS id;")
+                        _dt_temp = _ObjData.ExecSQLQuery("DELETE FROM GcsSalaryProcessStatus WHERE process_user_id = '" & Convert.ToString(HttpContext.Current.Session("UId")) & "' and Process_Type='" & Process_Type & "' " & "" &
+                                                       "Insert Into GcsSalaryProcessStatus(process_user_id, status, total_processed, total_to_process, record_created, Process_Type, mm, YYYY) VALUES('" & Convert.ToString(HttpContext.Current.Session("UId")) & "','START','0', '" & Convert.ToString(cnt) & "',GetDate(),'" & Process_Type & "', '" & month & "', '" & year & "'); SELECT SCOPE_IDENTITY() AS id;")
 
                         If _dt_temp.Rows.Count > 0 Then
                             Session("process_status_id") = _dt_temp.Rows(0)("id")
@@ -12806,34 +12455,27 @@ Namespace Payroll
                 _ArrParam(0) = New SqlClient.SqlParameter("@flag", "L")
                 _ArrParam(1) = New SqlClient.SqlParameter("@UserID", Session("UID"))
                 dst = _ObjData.GetDataTableProc("PaySP_GetGcsSalarySlip", _ArrParam)
-				Dim process_type() As String
                 If (dst.Rows.Count > 0 AndAlso dst.Rows(0)("IsAbleToStart").ToString = "0") Then
-                    process_type = dst.Rows(0)("Process_Type").ToString.Split("_"c)
-                    If process_type.Count > 1 Then
-                        is_email_process.Value = "1"
-                    Else
-                        is_email_process.Value = "0"
-                    End If
+
                     Dim slip As String = "Pay Slip is already publishing. Please wait till the completion."
-                    If process_type(0).ToString = "TAXSLIP" Then
-                        slip = If(process_type.Count > 1, "Salary Slip With Tax Details (Email) is already publishing. Please wait till the completion.", "Salary Slip With Tax Details is already publishing. Please wait till the completion.")
-                    ElseIf process_type(0).ToString = "SLIPWOLVE" Then
-                        slip = If(process_type.Count > 1, "Pay Slip Without Leave Details (Email) is already publishing. Please wait till the completion.", "Pay Slip Without Leave Details is already publishing. Please wait till the completion.")
-                    ElseIf process_type(0).ToString = "FORCAST" Then
-                        slip = If(process_type.Count > 1, "Tax sheet-forecast (Email) is already publishing. Please wait till the completion.", "Tax sheet-forecast is already publishing. Please wait till the completion.")
-                    ElseIf process_type(0).ToString = "SLIPTDSV" Then
-                        slip = If(process_type.Count > 1, "TDS Estimation (Email) is already publishing. Please wait till the completion.", "TDS Estimation is already publishing. Please wait till the completion.")
-                    ElseIf process_type(0).ToString = "SLIPWILVE" Then
-                        slip = If(process_type.Count > 1, "Pay Slip With Leave Details (Email) is already publishing. Please wait till the completion.", "Pay Slip With Leave Details is already publishing. Please wait till the completion.")
-                    Else
-                        slip = "Pay Slip is already publishing. Please wait till the completion."
+                    If dst.Rows(0)("Process_Type").ToString = "TAXSLIP" Then
+                        slip = "Salary Slip With Tax Details is already publishing. Please wait till the completion."
+                    ElseIf dst.Rows(0)("Process_Type").ToString = "SLIPWOLVE" Then
+                        slip = "Pay Slip Without Leave Details is already publishing. Please wait till the completion."
+                    ElseIf dst.Rows(0)("Process_Type").ToString = "FORCAST" Then
+                        slip = "Tax sheet-forecast is already publishing. Please wait till the completion."
+                    ElseIf dst.Rows(0)("Process_Type").ToString = "SLIPTDSV" Then
+                        slip = "TDS Estimation is already publishing. Please wait till the completion."
+                    ElseIf dst.Rows(0)("Process_Type").ToString = "SLIPWILVE" Then
+                        slip = "Pay Slip With Leave Details is already publishing. Please wait till the completion."
                     End If
                     hdnAlreadyRunRptName.Value = slip
                     If dst.Rows(0).Table.Columns.Contains("ID") Then
                         process_status_id.Value = dst.Rows(0)("ID").ToString
                     End If
-                    ScriptManager.RegisterStartupScript(Me.Page, GetType(Page), "refreshprocessstatus", "ShowPayslipsLockSummaryDetails('" & dst.Rows(0)("Process_Type").ToString.ToUpper & "');", True)
+                    ScriptManager.RegisterStartupScript(Me.Page, GetType(Page), "refreshprocessstatus", "ShowPayslipsLockSummaryDetails('" & dst.Rows(0)("Process_Type").ToString.ToUpper & "')", True)
                     Exit Sub
+
                 End If
             Catch ex As Exception
                 _objcommonExp.PublishError("Error in CheckProcessLocked()", ex)
@@ -12883,7 +12525,7 @@ Namespace Payroll
                         gcs_service = 1
                     End If
                 Catch ex As Exception
-					_objcommonExp.PublishError("Error in btnPublishedPDF_Click()", ex)
+
                 End Try
 
 
@@ -12984,10 +12626,7 @@ Namespace Payroll
                     If ddlRepIn.SelectedValue.ToString.ToUpper = "P" Then
                         LnkPDF.Style.Value = "display:none;"
                         LnkPDFWOPWD.Style.Value = "display:none;"
-                        If is_email_process.Value = "0" Then
-                            download_pdf2.Style.Value = "border:0;cursor:pointer;"
-                        End If
-
+                        download_pdf2.Style.Value = "border:0;cursor:pointer;"
                         Dim id As String = process_status_id.Value
                         Dim gcp_path As String = "Payroll/", month_val As String = ""
                         Dim slip As String = "", slipType As String = ""
@@ -13046,7 +12685,7 @@ Namespace Payroll
                             fileExt = "_SalarySlipwithTaxDetails"
                         ElseIf DdlreportType.SelectedValue.ToString.ToUpper = "T" Then
                             fileExt = "_TDSEstimationSlip"
-                        ElseIf DdlreportType.SelectedValue.ToString.ToUpper = "T" Then
+                        ElseIf DdlreportType.SelectedValue.ToString.ToUpper = "SL" Then
                             fileExt = "_SalarySlip"
                         End If
 
