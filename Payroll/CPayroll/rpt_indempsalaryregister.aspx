@@ -1005,7 +1005,8 @@
                                                                         OnClientClick="return PleaseWaitWithDailog();"
                                                                         ToolTip="Click here to download already generated Year to Date Register">
                                                                         <img src="Images/Excel_img.jpg" border="0"
-                                                                            height="18"></asp:LinkButton>
+                                                                            height="18">
+                                                                    </asp:LinkButton>
                                                                     <br />
                                                                     <span id="spnAlreadyYTDGeneratedEnd" runat="server"
                                                                         class="UserPrevRunMsg"></span>
