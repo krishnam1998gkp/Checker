@@ -29,9 +29,9 @@
     <script language="javascript" src="JavaFiles/Js_ScrollGrid.js" type="text/javascript"></script>
     <%--<script language="javascript" src="JavaFiles/ProcessBar.js" type="text/javascript"></script>--%>
     <script language="javascript" src="JavaFiles/ProcessBarWithoutPasswd.js?v=1.0.2" type="text/javascript"></script>
-    <script language="javascript" src="JavaFiles/PaySlipsProcessBar.js?v=1.0.34" type="text/javascript"></script>
+    <script language="javascript" src="JavaFiles/PaySlipsProcessBar.js?v=1.0.28" type="text/javascript"></script>
     <script language="javascript" src="JavaFiles/CommonDownload.js?v=1.0.1" type="text/javascript"></script>
-    <script language="javascript" src="JavaFiles/ReportApiProgressBarScript.js?v=1.0.11" type="text/javascript"></script>
+    <script language="javascript" src="JavaFiles/ReportApiProgressBarScript.js?v=1.0.10" type="text/javascript"></script>
     <style type="text/css">
         .btnGreen {
             cursor: pointer;
@@ -125,42 +125,9 @@
             border:0;
             cursor:pointer;
         }
-
-
-        #infoBtn:hover{
-            cursor: pointer;
-        }
-        #emailContent *{
-            font-size: 12px;
-        }
-
-        /* Styling added for arrow icon to shake */
-        #emailStatusIcon:hover {
-          animation: shake 1.2s;
-          animation-iteration-count: infinite;
-        }
-        
-        @keyframes shake {
-            0%   { transform: translateX(0); }
-            25%  { transform: translateX(-9px); }
-            50%  { transform: translateX(7px); }
-            75%  { transform: translateX(-9px); }
-            100% { transform: translateX(0); }
-        }
-
-        .email_table_style {
-            border-collapse:collapse;
-            white-space: nowrap;   
-        }
-        .align_right{
-            text-align: right; 
-        }
     </style>
-
-
 </head>
 <script language="javascript" type="text/javascript">
-    var MODULE_CONFIG = "";
     $(document).ready(function () {
         $("#divSocial img").hover(
             function () {
@@ -373,15 +340,8 @@
                         }
                         // added show progress bar immediately.  added by Kangkan
                         if (['BtnSendCCBCC', 'BtnSend', 'BtnPublishGrpBy'].includes(name) && $("#DdlreportType").val().toUpperCase() === 'T') {
-                            if (isPaySlipAllowed()) {
-                                LoadPaySlipProgress(RptName);
-                            }
-                        }
-                        if (['BtnSendCCBCC', 'BtnSend'].includes(name) && ($("#DdlreportType").val().toUpperCase() === 'SL' || $("#DdlreportType").val().toUpperCase() === 'S' || $("#DdlreportType").val().toUpperCase() === 'R')) {
-                            if (isPaySlipAllowed()) {
-                                LoadPaySlipProgress(RptName);
-                            }
                             
+                            LoadPaySlipProgress(RptName);
                         }
                        
                         
@@ -480,9 +440,6 @@
                 if($("#DdlreportType").val().toUpperCase() == 'T' || $("#DdlreportType").val().toUpperCase() == 'R' || $("#DdlreportType").val().toUpperCase() == 'S' || $("#DdlreportType").val().toUpperCase() == '57') {
                     LoadPaySlipProgress(RptName);
                 }
-                if ($("#DdlreportType").val().toUpperCase() == 'SL' && isPaySlipAllowed()) {
-                    LoadPaySlipProgress(RptName);
-                }
                 return true;
             }
             else {
@@ -493,7 +450,6 @@
                 $("#btnWOPWD").val("Publish Payslip Without Password");
                 return false;
             }
-            
 
         }
         else if (name == 'BtnPublishGrpBy') {
@@ -911,9 +867,10 @@
         $('#TdSearch [id^=USearch]').val('');
         $('#lblmsg,#lit,#lblmsg2').text("");
         $('#ddllEncrType').attr('selectedIndex', '0');
-        $('#txtrptName').text("");
-        $('#trEncrType,#trSftpID,#trFileName,#trformat').css("display", "none")
+        $('#ddlrepformat').attr('selectedIndex', '0');
+        $('#txtrptName').val("");
         $('#chkSFTP').attr('checked', false);
+        $('#trEncrType,#trSftpID,#trFileName,#trformat').css("display", "none");
 
         if (_ctrl == 'R') {
             $('#tblsp,#tblSh,#tblpwd,#TrNoSearch,#tremail,#tableshow,#tblrepin,#trsortbasis,#trGroupBY,#TRDIV,#tblothepaycode,#tblsection,#tblpaycode,#TblReimb,#trrepformat,#trGroupBY,#divEmail,#trselall,#trShowClr,#divSocial').css('display', 'none');
@@ -1058,15 +1015,6 @@
         OpenPaySlipProgressbar(AppPath, page, path, "TAXSLIP", process_status_id);
         //OpenSlipProgress(AppPath, page, path, "TAXSLIP");
     }
-    function ShowTaxDetailsMail() {
-        var qryP = $("#HidPreVal").val();
-        var AppPath = $("#HidAppPath").val();
-        var path = $("#HidPath").val();
-        var process_status_id = $("#process_status_id").val();
-        var page = 'reports/PreSalSlip.aspx?id=' + qryP;
-        OpenPaySlipProgressbar(AppPath, page, path, "TAXSLIP", process_status_id);
-        //OpenSlipProgress(AppPath, page, path, "TAXSLIP");
-    }
     function ShowTdsDetails() {
         var qryPv = $("#HidPreVal").val();
         var AppPath = $("#HidAppPath").val();
@@ -1107,14 +1055,6 @@
         var path = $("#HidPath").val();
         var page = 'reports/Pre_SalarySlip.aspx?id=' + qryPv;
         OpenPaySlipProgressbar(AppPath, page, path, "SLIPWILVE");
-    }
-    function ShowWithoutLeaveDetails() {
-        $("#LnkPDF").hide();
-        var qryPv = $("#HidPreVal").val();
-        var AppPath = $("#HidAppPath").val();
-        var path = $("#HidPath").val();
-        var page = 'reports/Pre_SalarySlipInclude.aspx?id=' + qryPv;
-        OpenPaySlipProgressbar(AppPath, page, path, "SLIPWOLVE");
     }
 
     var loopInstance = null;
@@ -1267,93 +1207,6 @@
         }, 3000);
         
     }
-    //
-    function resolveSlip(slip) {
-        if (slip === "SL") {
-            return "SLIPWILVE"
-        } else if (slip === "S") {
-            return "SLIPWOLVE"
-        } else if (slip === "R") {
-            return "TAXSLIP"
-        } else if (slip === "57") {
-            return "FORCAST"
-        } else if (slip === "T") {
-            return "SLIPTDSV"
-        }
-        return ""
-    }
-
-    function MonthToInt(monthStr) {
-        try {
-            const monthIndex = new Date(`${monthStr} 1, 2000`).getMonth();
-            return monthIndex
-
-        } catch (e) {
-            return 0
-        }
-        
-    }
-
-    function setModuleConfig(config) {
-        MODULE_CONFIG = config
-    }
-
-    function isPaySlipAllowed() {
-        let slip = resolveSlip($("#DdlreportType option:selected").val());
-        let mm_yyyy = $("#ddlMonthYear option:selected").text();
-        let parts = MODULE_CONFIG.split(":")
-        if (parts.length !== 2) {
-            return false;
-        } 
-        if (parts[0] === 'false') {
-            return false;
-        }
-        let slip_config = parts[1].split(",")
-        let slipMap = new Map();
-        for (let i = 0; i < slip_config.length; i++) {
-            let each_slip = slip_config[i].split("=")
-            if (each_slip.length == 2) {
-                slipMap.set(each_slip[0], each_slip[1])
-            }
-        }
-        if (!slipMap.has(slip)) {
-            return false;
-        }
-        let cut_off = slipMap.get(slip).split("-");
-        if (cut_off.length !== 2) {
-            return false;
-        }
-        let cut_off_month = MonthToInt(cut_off[0].trim())
-        if (cut_off_month === 0) {
-            return false;
-        }
-            
-        let cut_off_year = 0
-        try {
-            cut_off_year = parseInt(cut_off[1].trim())
-        } catch (e) {
-            return false;
-        }
-
-        try {
-
-            let cut_off_date = new Date(cut_off_year, cut_off_month, 1);
-            let target_entry = mm_yyyy.split("-");
-            let target_month = parseInt(MonthToInt(target_entry[0].trim()));
-            let target_year = parseInt(target_entry[1].trim());
-            let target_date = new Date(target_year, target_month, 1);
-            return target_date >= cut_off_date
-        } catch (e) {
-            return false
-        }
-
-    }
-    function closeTable() {
-        $("#popupBox").hide();
-        const overlay = document.getElementById('overlay_mail');
-        overlay.style.display = 'none';
-        
-    }
 
 </script>
 <body bottommargin="0" bgcolor="#f7fcff" leftmargin="0" topmargin="0" rightmargin="0"
@@ -1394,13 +1247,9 @@
             <div>
                 <span>Processed in : </span><span id="totalTimeTaken" style="font-weight: bold"></span>
             </div>
-            <div id="emailSummary" style="display: none; line-height: 12px;height: 40px; overflow: auto; margin-top: 2px;">
-                <span id="summaryEmail" ></span>
-            </div>
             <div id="summaryError" style="display: none; line-height: 15px; height: 80px; overflow: auto">
                 <span id="errorSummary" style="color: Red;"></span>
             </div>
-            
         </div>
     </div>
     <%-- Excel Progress bar div --%>
@@ -1439,13 +1288,6 @@
         </div>
     </div>
 
-    <!-- New email progress bar -->
-    <div id="dlg2" style="font-size: 1.5em; padding: 20px; display: none" title="Progress">
-        <div id="emailContent">
-            <asp:Literal ID="mailPopUpContent" runat="server" />
-        </div>
-    </div>
-
     <form id="form1" method="post" runat="server">
     <uc1:AdminMenu ID="AdminMenu1" runat="server" />
     <table cellspacing="0" cellpadding="0" width="100%" border="0">
@@ -1472,28 +1314,6 @@
                                                 <tr>
                                                     <td align="left">
                                                         <table cellspacing="0" cellpadding="0" width="96%" align="center" border="0">
-                                                            <tr>
-                                                                <td >
-
-                                                                </td>
-                                                                <td colspan ="2">
-                                                                    <table cellspacing="0" cellpadding="0" width="98%" align="center" border="0"  runat="server" >
-                                                                        <tr>
-                                                                            <td align="right">
-                                                                                <label class="UserStatusMsg">
-                                                                                    <span id="infoBtn" runat="server">
-                                                                                       <div id="iconWrapper" style="position: relative; display: inline-block;" onclick="onClickUpdateEmail();">
-                                                                                           <img src="Images/icon3.png" alt="Email" style="vertical-align: middle;" id="emailStatusIcon"/>
-                                                                                           <span class="UserStatusMsg" id="emailStatusText">View Email Status</span>
-                                                                                       </div>
-                                                                                    </span>
-                                                                                </label>
-                                                                            </td>
-                                                                        </tr>
-                                                                    </table>
-                                                                </td>
-                                                            </tr>
-                                                           
                                                             <tr>
                                                                 <td class="tdcaption">
                                                                     <asp:RadioButton ID="rbtnslip" runat="server" CssClass="radio" Text="Salary Slip Report"
@@ -1863,7 +1683,7 @@
                                                                                     <td class="TDCaption" width="12%">Transfer File to SFTP Server</td>
                                                                                     <td class="TdColon">:</td>
                                                                                     <td class="tdvd">
-                                                                                        <asp:CheckBox ID="chkSFTP" runat="server" CssClass="Checkbox" onchange="javascript:return OnLoadDataBind();" AutoPostBack="false" /></td>
+                                                                                        <asp:CheckBox ID="chkSFTP" runat="server" CssClass="Checkbox" AutoPostBack="false" /></td>
                                                                                 </tr>
                                                                                  <tr>
                                                                                      <td class="trupbtn" colspan="3">
@@ -3087,13 +2907,9 @@
                                                                                                                                 <input type="hidden" runat="server" id="HidAppPath" />
                                                                                                                                 <input type="hidden" runat="server" id="HidPath" />
                                                                                                                                 <input type="hidden" runat="server" id="process_status_id" />
-																																<input type="hidden" runat="server" id ="is_email_process" />
                                                                                                                                 <input type="hidden" runat="server" id="is_gcs_powered" />
                                                                                                                                 <input type="hidden" runat="server" name="companyCode" value="" id="companyCode" />
                                                                                                                                 <input type="hidden" runat="server" name="url" value="" id="java_url" />
-                                                                                                                                <input type="hidden" id="report_service" name="report_service" runat="server" value ="N"/>
-                                                                                                                                <input type="hidden" id="report_service_url" name="report_service_url" runat="server" value ="N"/>
-                                                                                                                                <input type="hidden" id="report_service_file_name" name="report_service_file_name" runat="server" value =""/>
                                                                                                                             </td>
                                                                                                                         </tr>
                                                                                                                     </table>
@@ -3166,11 +2982,6 @@
         setTimeout(() => {
             let ele = document.getElementById("USearch_txtEmpCode");
             let is_gcs_powered = document.getElementById("is_gcs_powered");
-            let is_email = document.getElementById("is_email_process");
-            let is_email_process = false;
-            if (is_email && is_email.value === '1') {
-                is_email_process = true
-            }
             if (ele && is_gcs_powered) {
                 if (is_gcs_powered.value === '1') {
                     ele.setAttribute("size", "100000")
@@ -3183,7 +2994,7 @@
             let download_pdf1 = document.getElementById("download_pdf1")
             let download_pdf2 = document.getElementById("download_pdf2")
             
-            if (!is_email_process && lblMsgSlip && lblMsgSlip.innerText.length > 2 && process_id && process_id.value.length > 0) {
+            if (lblMsgSlip && lblMsgSlip.innerText.length > 2 && process_id && process_id.value.length > 0) {
                 if (download_pdf1) {
                     download_pdf1.style = "border:0;cursor:pointer;"
                 }
@@ -3213,38 +3024,6 @@
 
 
         }, 100)
-
-        const infoBtn = document.getElementById('infoBtn');
-        const popupBox = document.getElementById('popupBox')
-        const overlay = document.getElementById('overlay_mail');
-
-        infoBtn.addEventListener('click', function () {
-            initiliaseEmailProcessStatus(false);
-            $("#dlg2").dialog({
-                autoOpen: false,
-                draggable: true,
-                bgiframe: true,
-                resizable: true,
-                closeOnEscape: true,
-                height: "auto",
-                width: 800,
-                modal: true,
-                position: "center",
-                title: "Email Progess",
-                buttons: {
-                    "CLOSE": function () {
-                        $("#dlg2").dialog("close");
-                        return false;
-                    }
-                },
-                
-            });
-            $('#dlg2').dialog('open');       
-
-        });
-
-
-
         
     </script>
 </body>
