@@ -1005,8 +1005,7 @@
                                                                         OnClientClick="return PleaseWaitWithDailog();"
                                                                         ToolTip="Click here to download already generated Year to Date Register">
                                                                         <img src="Images/Excel_img.jpg" border="0"
-                                                                            height="18">
-                                                                    </asp:LinkButton>
+                                                                            height="18"></asp:LinkButton>
                                                                     <br />
                                                                     <span id="spnAlreadyYTDGeneratedEnd" runat="server"
                                                                         class="UserPrevRunMsg"></span>
@@ -1045,6 +1044,12 @@
                                                     runat="server" value="YTDSALREG" />
                                                 <input type="hidden" id="hdnCSV" name="ShowCSV" runat="server"
                                                     value="N" />
+                                                <input type="hidden" id="report_service" name="report_service"
+                                                    runat="server" value="N" />
+                                                <input type="hidden" id="report_service_url" name="report_service_url"
+                                                    runat="server" value="N" />
+                                                <input type="hidden" id="report_service_file_name"
+                                                    name="report_service_file_name" runat="server" value="" />
                                             </td>
                                         </tr>
                                     </table>
