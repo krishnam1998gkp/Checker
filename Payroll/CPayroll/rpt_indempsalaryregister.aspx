@@ -768,6 +768,9 @@
                                             <input type="hidden" id="hdnRptName" name="hdnRptName" runat="server" value ="YTD Salary Register Report"/>
                                             <input type="hidden" id="hdnProcessType" name="ProcessType" runat="server" value ="YTDSALREG"/>
                                             <input type="hidden" id="hdnCSV" name="ShowCSV" runat="server" value ="N"/>
+                                            <input type="hidden" id="report_service" name="report_service" runat="server" value ="N"/>
+                                            <input type="hidden" id="report_service_url" name="report_service_url" runat="server" value ="N"/>
+                                            <input type="hidden" id="report_service_file_name" name="report_service_file_name" runat="server" value =""/>
                                         </td>
                                     </tr>
                                 </table>

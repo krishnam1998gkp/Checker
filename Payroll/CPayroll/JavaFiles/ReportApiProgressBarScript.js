@@ -8,6 +8,7 @@
  2.     28 Apr 2025     Vishal Chauhan       YTD Report Builder and YTD Salary Register zip download falg changed
  2.     13 May 2025     Vishal Chauhan       No Record Found Message on UI
  2.     08 Jun 2025     Vishal Chauhan       Bonus Report Process type added
+ 5.     21 Aug 2025     Kangkan Lahkar       For salary register and salary register dynamic download by report service url
  ===============================================================================================================================================    
 */
 var _AppDomain;
@@ -343,7 +344,15 @@ var YTDSalRegExcelProcessSummary = function (thr) {
             hideModal();
             //hdfile = filepath + '~' + filename + '~' + 'N'
             hdfile = filepath + '~' + filename + '~' + 'REGPROCESSBAR'
-            OpenDownloadDiaog(hdfile);
+            let report_service = $("#report_service").val();
+            let report_service_url = $("#report_service_url").val();
+            let fileName = $("#report_service_file_name").val();
+            if (report_service === 'Y') {
+                window.open(report_service_url + "/api/service/payrollReportFramework/download-xlsx-zip?fileName=" + encodeURIComponent(fileName), "_blank" )
+            } else {
+                OpenDownloadDiaog(hdfile);
+            }
+            
         }
         //Process in working
         else {
@@ -497,7 +506,15 @@ var DynamicRegisterExcelProcessSummary = function (thr) {
             else {
                 hdfile = filepath + '~' + filename + '~' + 'N'
             }
-            OpenDownloadDiaog(hdfile);
+            let report_service = $("#report_service").val();
+            let report_service_url = $("#report_service_url").val();
+            let fileName = $("#report_service_file_name").val();
+            if (report_service === 'Y') {
+                window.open(report_service_url + "/api/service/payrollReportFramework/download-xlsx-zip?fileName=" + encodeURIComponent(fileName), "_blank")
+            } else {
+                OpenDownloadDiaog(hdfile);
+            }
+
         }
         //Process in working
         else {
